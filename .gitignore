@@ -1,0 +1,31 @@
+# OSM / tile data — never commit, these are large + regenerable
+*.osm.pbf
+*.pmtiles
+*.mbtiles
+data/raw/
+# Planetiler auxiliary downloads (lake / natural-earth / water)
+data/sources/
+# Planetiler tile_weights / layerstats
+data/*.tsv.gz
+valhalla_tiles/
+valhalla_tiles.tar
+# Valhalla graph + working pbf (Phase 2)
+services/routing/custom_files/
+
+# Tooling state
+.claude/
+
+# Env
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

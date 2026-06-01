@@ -1,0 +1,13 @@
+# Phase 1: serve the MapLibre demo page AND reverse-proxy Martin under /tiles,
+# so the browser uses a single origin (no CORS). Martin runs with
+# --route-prefix /tiles, so it already expects the /tiles/* paths.
+:80 {
+	encode gzip
+
+	# Tile server (catalog, TileJSON, /tiles/{source}/{z}/{x}/{y})
+	reverse_proxy /tiles/* martin:3000
+
+	# Demo page + style assets
+	root * /usr/share/caddy
+	file_server
+}

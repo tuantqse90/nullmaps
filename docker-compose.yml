@@ -1,0 +1,77 @@
+# NullMaps — the whole stack on one box. Source of truth for local + prod (Coolify).
+#
+# Phase 1 (active): martin (tile server) + demo (MapLibre HCMC page).
+# Later phases are scaffolded as commented blocks — uncomment as each lands.
+#
+# Run Phase 1:  make demo   (builds tiles if needed, then `docker compose up martin demo`)
+
+services:
+  # --- Phase 1: tile server -------------------------------------------------
+  # Martin serves the Vietnam PMTiles file over HTTP with tile-range support.
+  martin:
+    image: ghcr.io/maplibre/martin:latest
+    # route-prefix lets Caddy reverse-proxy Martin under /tiles so the browser
+    # talks to a single origin (the demo) — avoids cross-origin/CORS failures.
+    command: ["--route-prefix", "/tiles", "/data/${PMTILES_FILE:-vietnam.pmtiles}"]
+    expose:
+      - "3000"
+    ports:
+      - "${MARTIN_PORT:-3000}:3000"   # also exposed directly for debugging/curl
+    volumes:
+      - ./data:/data:ro
+    restart: unless-stopped
+
+  # --- Phase 1: MapLibre demo page -----------------------------------------
+  # Static Caddy serving the demo HTML + style, and reverse-proxying /tiles/* to
+  # Martin so the map loads tiles same-origin (no CORS). Centered on HCMC.
+  demo:
+    image: caddy:2-alpine
+    ports:
+      - "${DEMO_PORT:-8080}:80"
+    volumes:
+      - ./services/tiles/style:/usr/share/caddy:ro
+      - ./services/tiles/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - martin
+    restart: unless-stopped
+
+  # --- Phase 2 (reserved): Valhalla routing + matrix -----------------------
+  # valhalla:
+  #   image: ghcr.io/valhalla/valhalla:latest
+  #   ports: ["${VALHALLA_PORT:-8002}:8002"]
+  #   volumes:
+  #     - ./services/routing:/custom_files
+  #     - valhalla_tiles:/data
+  #   # Build graph from data/raw/vietnam-latest.osm.pbf; motorbike costing required.
+
+  # --- Phase 3 (reserved): Photon geocoder ---------------------------------
+  # photon:
+  #   image: rtuszik/photon-docker:latest
+  #   ports: ["${PHOTON_PORT:-2322}:2322"]
+  #   volumes: [photon_data:/photon/photon_data]
+
+  # --- Phase 4 (reserved): Google/Goong-compat FastAPI adapter --------------
+  # adapter:
+  #   build: ./services/adapter
+  #   ports: ["${ADAPTER_PORT:-8000}:8000"]
+  #   environment:
+  #     - API_KEY=${API_KEY}
+  #     - MARTIN_URL=http://martin:3000
+  #     - VALHALLA_URL=http://valhalla:8002
+  #     - PHOTON_URL=http://photon:2322
+  #   depends_on: [martin]
+
+  # --- Reserved: PostgreSQL + PostGIS --------------------------------------
+  # postgis:
+  #   image: postgis/postgis:16-3.4
+  #   environment:
+  #     - POSTGRES_USER=${POSTGRES_USER}
+  #     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+  #     - POSTGRES_DB=${POSTGRES_DB}
+  #   ports: ["${POSTGRES_PORT:-5432}:5432"]
+  #   volumes: [pgdata:/var/lib/postgresql/data]
+
+# volumes:
+#   valhalla_tiles:
+#   photon_data:
+#   pgdata:
