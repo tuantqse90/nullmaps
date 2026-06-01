@@ -10,6 +10,7 @@ OSM_EXTRACT_URL ?= https://download.geofabrik.de/asia/vietnam-latest.osm.pbf
 DATA_DIR        ?= ./data
 RAW_DIR         ?= ./data/raw
 PMTILES_FILE    ?= vietnam.pmtiles
+VALHALLA_PORT   ?= 8002
 PBF             := $(RAW_DIR)/vietnam-latest.osm.pbf
 
 .DEFAULT_GOAL := help
@@ -80,6 +81,29 @@ down: ## Stop all services
 logs: ## Tail service logs
 	docker compose logs -f
 
+.PHONY: graph
+graph: ## (Phase 2) Build/start Valhalla — auto-builds the VN routing graph on first run
+	@test -s services/routing/custom_files/vietnam-latest.osm.pbf || \
+	  ln -f $(PBF) services/routing/custom_files/vietnam-latest.osm.pbf 2>/dev/null || \
+	  cp $(PBF) services/routing/custom_files/
+	docker compose up -d valhalla
+	@echo ">> Valhalla starting on :$(VALHALLA_PORT). First run builds the graph (minutes)."
+	@echo ">> Watch:  docker compose logs -f valhalla   |   Ready when GET /status returns tileset_last_modified"
+
 .PHONY: route-test
-route-test: ## (Phase 2) Smoke-test a motorbike route via Valhalla — not yet wired
-	@echo "route-test arrives in Phase 2 (Valhalla motor_scooter costing)."
+route-test: ## (Phase 2) Smoke-test an HCMC motorbike route (costing=motor_scooter)
+	@echo ">> HCMC: Ben Thanh Market -> Landmark 81, costing=motor_scooter"
+	@curl -fsS http://localhost:$(VALHALLA_PORT)/route \
+	  -H 'Content-Type: application/json' \
+	  -d '{"locations":[{"lat":10.7725,"lon":106.6980},{"lat":10.7951,"lon":106.7218}],"costing":"motor_scooter","units":"kilometers"}' \
+	  | python3 -c "import sys,json; s=json.load(sys.stdin)['trip']['summary']; print('>> OK: %.1f km, %.0f min'%(s['length'], s['time']/60))" \
+	  || echo ">> Valhalla not ready — check: docker compose logs -f valhalla"
+
+.PHONY: matrix-test
+matrix-test: ## (Phase 2) Smoke-test a 2x2 distance matrix (costing=motor_scooter)
+	@echo ">> HCMC District 1: 2 sources x 2 targets, motor_scooter"
+	@curl -fsS http://localhost:$(VALHALLA_PORT)/sources_to_targets \
+	  -H 'Content-Type: application/json' \
+	  -d '{"sources":[{"lat":10.7725,"lon":106.6980},{"lat":10.7800,"lon":106.7010}],"targets":[{"lat":10.7626,"lon":106.6822},{"lat":10.7691,"lon":106.7000}],"costing":"motor_scooter","units":"kilometers"}' \
+	  | python3 -c "import sys,json; m=json.load(sys.stdin)['sources_to_targets']; print('>> matrix km:', [[c['distance'] for c in r] for r in m])" \
+	  || echo ">> Valhalla not ready — check: docker compose logs -f valhalla"

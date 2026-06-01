@@ -19,12 +19,22 @@ make demo                     # build VN PMTiles (if needed) + serve
 
 `make help` lists all commands. Full steps: [`docs/runbook-phase1-tiles.md`](docs/runbook-phase1-tiles.md).
 
+## Routing (Phase 2 — motorbike-first)
+
+```bash
+make graph        # build/start Valhalla (first run builds the VN graph)
+make route-test   # HCMC motorbike route   |   make matrix-test  # 2x2 matrix
+```
+
+Native Valhalla on `:8002` — `POST /route`, `POST /sources_to_targets`, `costing=motor_scooter`.
+Details + gotchas: [`docs/runbook-phase2-routing.md`](docs/runbook-phase2-routing.md).
+
 ## Roadmap
 
 | Phase | Capability | Engine | Status |
 |---|---|---|---|
-| 1 | Tiles + MapLibre SDK | Planetiler → PMTiles → Martin | **active** |
-| 2 | Directions + Matrix (motorbike-first) | Valhalla | scaffolded |
+| 1 | Tiles + MapLibre SDK | Planetiler → PMTiles → Martin | **done** |
+| 2 | Directions + Matrix (motorbike-first) | Valhalla | **done** |
 | 3 | Geocoding / Reverse / Autocomplete | Photon | scaffolded |
 | 4 | Google/Goong-compat API (**required**) | FastAPI adapter | scaffolded |
 | 5 | AI address helper (optional) | LiteLLM → Qwen | future |

@@ -35,14 +35,24 @@ services:
       - martin
     restart: unless-stopped
 
-  # --- Phase 2 (reserved): Valhalla routing + matrix -----------------------
-  # valhalla:
-  #   image: ghcr.io/valhalla/valhalla:latest
-  #   ports: ["${VALHALLA_PORT:-8002}:8002"]
-  #   volumes:
-  #     - ./services/routing:/custom_files
-  #     - valhalla_tiles:/data
-  #   # Build graph from data/raw/vietnam-latest.osm.pbf; motorbike costing required.
+  # --- Phase 2: Valhalla routing + matrix ----------------------------------
+  # Auto-builds the routing graph from the VN extract in services/routing/
+  # custom_files on first start (then reuses it). Motorbike costing is native:
+  # send costing=motor_scooter (or motorcycle) on /route and /sources_to_targets.
+  valhalla:
+    image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
+    ports:
+      - "${VALHALLA_PORT:-8002}:8002"
+    volumes:
+      - ./services/routing/custom_files:/custom_files
+    environment:
+      - use_tiles_ignore_pbf=False
+      - force_rebuild=False
+      - build_elevation=False      # skip elevation: faster build, less disk
+      - build_admins=True          # needed for country rules / border crossing
+      - build_time_zones=False
+      - serve_tiles=True
+    restart: unless-stopped
 
   # --- Phase 3 (reserved): Photon geocoder ---------------------------------
   # photon:
