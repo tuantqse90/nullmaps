@@ -66,10 +66,23 @@ fail-open. `make norm-test`; details in [`services/normalizer/README.md`](servic
 | 4 | Google/Goong-compat API (**required**) | FastAPI adapter | **done** (all 4 endpoints live) |
 | 5 | AI address helper (optional) | LiteLLM → Qwen | **done** (ships no-op; enable with a key) |
 
+## Production entrypoint & deploy
+
+Prod publishes **only the gateway** (Caddy, `:8088`) — it gates `/maps/*` + `/v1/*` on `API_KEY` and
+fronts tiles/demo; the engines are internal (no published ports).
+
+```bash
+docker compose -f docker-compose.yml up -d     # PROD: gateway only (engines internal)
+docker compose up -d                           # DEV: + override re-exposes engine ports for make *-test
+```
+
+Deploy to Hetzner/Coolify: [`docs/runbook-deploy-coolify.md`](docs/runbook-deploy-coolify.md).
+CI (compose validation + py3.12 unit tests) runs on every push.
+
 ## Stack
 
-MapLibre GL JS · Planetiler · PMTiles · Martin · Valhalla · Photon · PostGIS · FastAPI (Python 3.12).
-Docker Compose is the source of truth; deployed on **Hetzner via Coolify**.
+MapLibre GL JS · Planetiler · PMTiles · Martin · Valhalla · lightweight geocoder · FastAPI (Python 3.12)
+· LiteLLM · Caddy gateway. Docker Compose is the source of truth; deployed on **Hetzner via Coolify**.
 
 ## Data
 

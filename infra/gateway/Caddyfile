@@ -1,0 +1,45 @@
+# NullMaps single front door (production entrypoint).
+#
+# Only this service is published. The engines (valhalla, geocoder, normalizer)
+# are NOT reachable from outside — internal-only, reached via the adapter.
+# Martin is fronted here for the basemap (read-only).
+#
+# Auth: the adapter already enforces the shared API_KEY on /maps/* and /v1/*.
+# The gateway also refuses to proxy the API at all without a key (header or ?key=).
+# Tiles / style / demo are read-only and ungated.
+
+{
+	admin off
+	auto_https off
+}
+
+:8088 {
+	encode gzip
+
+	# API paths that lack a valid key -> 403 (header X-API-Key or ?key=)
+	@api_noauth {
+		path /maps/* /v1/*
+		not header X-API-Key {$API_KEY}
+		not query key={$API_KEY}
+	}
+	handle @api_noauth {
+		header Content-Type application/json
+		respond `{"status":"REQUEST_DENIED","error_message":"missing or invalid API key"}` 403
+	}
+
+	# Authorized API -> adapter
+	@api path /maps/* /v1/*
+	handle @api {
+		reverse_proxy adapter:8000
+	}
+
+	# Tiles + glyphs (read-only basemap)
+	handle /tiles/* {
+		reverse_proxy martin:3000
+	}
+
+	# Demo page + style.json (read-only)
+	handle {
+		reverse_proxy demo:80
+	}
+}

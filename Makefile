@@ -99,7 +99,12 @@ geo-index: $(PBF) ## (Phase 3) Build the VN geocoder SQLite index from the OSM e
 	  -v "$(abspath services/geocoder/data):/data" \
 	  nullmap-geocoder sh -c \
 	  "mkdir -p /build && python importer.py /raw/vietnam-latest.osm.pbf /build/geocoder.db && \
-	   cp /build/geocoder.db /data/geocoder.db"
+	   rm -f /data/geocoder.db && cp /build/geocoder.db /data/geocoder.db"
+	@# dev-box only: virtiofs sometimes writes 'geocoder N.db' (space) — normalize it
+	@if [ ! -s services/geocoder/data/geocoder.db ]; then \
+	  f=$$(ls -t services/geocoder/data/geocoder*.db 2>/dev/null | head -1); \
+	  [ -n "$$f" ] && mv "$$f" services/geocoder/data/geocoder.db; fi
+	@rm -f services/geocoder/data/geocoder\ *.db
 	docker compose up -d geocoder
 
 .PHONY: geo-test

@@ -43,6 +43,10 @@ opportunistically. Do **not** turn this into a data-collection company.
   README** — keep it current as services land.
 - **Auth = one shared API key** in env (`API_KEY`). My apps send it; the adapter/services check it.
   No Kong/Tyk, no key management, no quotas.
+- **Single front door:** prod publishes only the **gateway** (Caddy, `:8088`) — it gates `/maps/*` and
+  `/v1/*` on the key and fronts tiles/demo; the engines (valhalla, geocoder, normalizer) have **no
+  published ports**. `docker-compose.yml` is prod-safe; `docker-compose.override.yml` re-exposes engine
+  ports for local `make *-test` only. Deploy prod with the base file ALONE.
 - **Compat adapter is REQUIRED, not optional** — my existing apps already speak Google Maps / Goong
   shapes. The adapter lets me repoint them without rewriting client code. Goong's REST shapes mirror
   Google's, so a Google-compatible adapter covers most of Goong too.

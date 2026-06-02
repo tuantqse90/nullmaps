@@ -1,7 +1,13 @@
 # infra — deploy config
 
 NullMaps runs on a **single Hetzner box via Coolify**. `docker-compose.yml` at the repo root is the
-source of truth for both local and prod — Coolify deploys that same compose.
+source of truth. **Prod deploys the base file ALONE** — only the `gateway` (`:8088`) is published; the
+engines are internal. The local `docker-compose.override.yml` re-exposes engine ports for `make *-test`
+and must NOT be used in prod.
+
+- **`gateway/Caddyfile`** — the single front door: gates `/maps/*` + `/v1/*` on `API_KEY`, fronts
+  tiles/demo, keeps valhalla/geocoder/normalizer off the internet.
+- **Full deploy steps:** [`../docs/runbook-deploy-coolify.md`](../docs/runbook-deploy-coolify.md).
 
 ## Deploy (Coolify)
 

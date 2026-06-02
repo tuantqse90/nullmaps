@@ -15,8 +15,6 @@ services:
     command: ["--route-prefix", "/tiles", "--font", "/fonts", "/data/${PMTILES_FILE:-vietnam.pmtiles}"]
     expose:
       - "3000"
-    ports:
-      - "${MARTIN_PORT:-3000}:3000"   # also exposed directly for debugging/curl
     volumes:
       - ./data:/data:ro
       - ./services/tiles/fonts:/fonts:ro   # self-hosted glyphs (make fonts)
@@ -27,8 +25,8 @@ services:
   # Martin so the map loads tiles same-origin (no CORS). Centered on HCMC.
   demo:
     image: caddy:2-alpine
-    ports:
-      - "${DEMO_PORT:-8080}:80"
+    expose:
+      - "80"
     volumes:
       - ./services/tiles/style:/usr/share/caddy:ro
       - ./services/tiles/Caddyfile:/etc/caddy/Caddyfile:ro
@@ -42,8 +40,8 @@ services:
   # send costing=motor_scooter (or motorcycle) on /route and /sources_to_targets.
   valhalla:
     image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
-    ports:
-      - "${VALHALLA_PORT:-8002}:8002"
+    expose:
+      - "8002"
     volumes:
       - ./services/routing/custom_files:/custom_files
     environment:
@@ -62,8 +60,8 @@ services:
   # Build the index first:  make geo-index
   geocoder:
     build: ./services/geocoder
-    ports:
-      - "${GEOCODER_PORT:-2322}:2322"
+    expose:
+      - "2322"
     volumes:
       - ./services/geocoder/data:/data
     environment:
@@ -75,8 +73,8 @@ services:
   # Pending Phase 3: geocode + place/autocomplete return 503 until Photon is up.
   adapter:
     build: ./services/adapter
-    ports:
-      - "${ADAPTER_PORT:-8000}:8000"
+    expose:
+      - "8000"
     environment:
       - API_KEY=${API_KEY}
       - MARTIN_URL=http://martin:3000
@@ -94,13 +92,31 @@ services:
   # VN address input before geocoding. The adapter calls it only on ?normalize=1.
   normalizer:
     build: ./services/normalizer
-    ports:
-      - "${NORMALIZER_PORT:-8100}:8100"
+    expose:
+      - "8100"
     environment:
       - LLM_MODEL=${LLM_MODEL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_API_BASE=${LLM_API_BASE:-}
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+    restart: unless-stopped
+
+  # --- Gateway: the single published entrypoint ----------------------------
+  # The ONLY service with a host port in prod. Fronts the demo + tiles and the
+  # key-gated API; the engines above are internal-only (expose, not ports).
+  # Local dev re-publishes the engine ports via docker-compose.override.yml.
+  gateway:
+    image: caddy:2-alpine
+    ports:
+      - "${GATEWAY_PORT:-8088}:8088"
+    environment:
+      - API_KEY=${API_KEY}
+    volumes:
+      - ./infra/gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - adapter
+      - martin
+      - demo
     restart: unless-stopped
 
   # --- Reserved: PostgreSQL + PostGIS --------------------------------------

@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  compose:
+    name: compose config (prod + dev)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose
+        run: |
+          cp .env.example .env
+          echo "API_KEY=ci-test-key" >> .env
+          # prod entrypoint = base only (engines internal, gateway published)
+          docker compose -f docker-compose.yml config -q
+          # dev = base + override (ports re-published for local testing)
+          docker compose config -q
+      - name: Assert only the gateway is published in prod
+        run: |
+          published=$(docker compose -f docker-compose.yml config \
+            | python3 -c "import sys,yaml;c=yaml.safe_load(sys.stdin);print(sorted(s for s,v in c['services'].items() if v.get('ports')))")
+          echo "published in prod: $published"
+          test "$published" = "['gateway']"
+
+  tests:
+    name: unit tests (py3.12)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [adapter, normalizer, geocoder]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps + run tests
+        working-directory: services/${{ matrix.service }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+          PYTHONPATH=. pytest -q

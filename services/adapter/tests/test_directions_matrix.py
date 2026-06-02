@@ -99,12 +99,29 @@ def test_directions_requires_key():
     assert r.status_code == 403
 
 
-def test_geocode_pending():
+async def fake_geocode(path, params):
+    return {"results": [{"osm_id": "n1", "name": "Bến Thành", "kind": "poi",
+                         "lat": 10.7704, "lon": 106.6951, "extra": "HCMC"}]}
+
+
+def test_geocode_forward_maps_to_google_shape(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "geocoder", fake_geocode)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/geocode/json", params={"address": "ben thanh", "key": "secret"})
+    assert r.status_code == 200
+    b = r.json()
+    assert b["status"] == "OK"
+    g = b["results"][0]
+    assert g["geometry"]["location"] == {"lat": 10.7704, "lng": 106.6951}
+    assert "Bến Thành" in g["formatted_address"]
+
+
+def test_geocode_requires_key():
     m = load()
     c = TestClient(m.app)
-    r = c.get("/maps/api/geocode/json", params={"address": "X", "key": "secret"})
-    assert r.status_code == 503
-    assert r.json()["status"] == "UNAVAILABLE"
+    r = c.get("/maps/api/geocode/json", params={"address": "X"})
+    assert r.status_code == 403
 
 
 def test_polyline_roundtrip():
