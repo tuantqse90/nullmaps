@@ -29,6 +29,24 @@ await nm.isochrone("10.7725,106.6980", [10, 20]);            // reachability pol
 await nm.snap(["10.7725,106.6980", "10.7760,106.7000"]);     // snap-to-roads
 ```
 
+## Map features (MapLibre helpers)
+
+```js
+const map = nm.map(maplibregl, "map", { theme: "dark", controls: true });
+
+// draw a route on the map
+const route = await nm.directions("10.7725,106.6980", "10.7951,106.7218");
+map.on("load", () => nm.renderRoute(map, route));            // polyline + fitBounds
+
+// cluster many points (fleet / stations)
+nm.addClusters(map, [{ lat: 10.77, lng: 106.69, id: "A" }, /* ... */]);
+
+// overlay your own GeoJSON (showrooms/stations)
+nm.addOverlay(map, myStationsGeoJSON, { color: "#163300" });
+```
+
+`map()` adds navigation / scale / geolocate / fullscreen controls by default (`controls: false` to skip).
+
 ## Embed the map (MapLibre)
 
 ```html
