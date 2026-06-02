@@ -79,6 +79,19 @@ docker compose up -d                           # DEV: + override re-exposes engi
 Deploy to Hetzner/Coolify: [`docs/runbook-deploy-coolify.md`](docs/runbook-deploy-coolify.md).
 CI (compose validation + py3.12 unit tests) runs on every push.
 
+## Client SDK & API docs
+
+One-import JS/TS client (Directions w/ turn-by-turn steps, Matrix, Geocode, Autocomplete, TSP,
+isochrone, snap, + MapLibre embed): [`client/`](client/). Interactive OpenAPI/Swagger UI at
+`https://maps.nullshift.sh/docs`.
+
+```js
+import { NullMaps } from "./client/nullmaps.js";
+const nm = new NullMaps({ key: "YOUR_KEY" });
+const route = await nm.directions("10.7725,106.6980", "10.7951,106.7218");  // route.routes[0].legs[0].steps
+nm.map(maplibregl, "map");                                                  // self-hosted basemap
+```
+
 ## Stack
 
 MapLibre GL JS · Planetiler · PMTiles · Martin · Valhalla · lightweight geocoder · FastAPI (Python 3.12)

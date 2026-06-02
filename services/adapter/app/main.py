@@ -25,7 +25,24 @@ from fastapi.responses import JSONResponse
 
 from .polyline import reencode, encode, decode
 
-app = FastAPI(title="NullMaps Adapter", version="0.4.0")
+app = FastAPI(
+    title="NullMaps API",
+    version="1.0.0",
+    description=(
+        "Self-hosted, Google/Goong-compatible maps API. Authenticate with the shared "
+        "key via `?key=...` or header `X-API-Key`.\n\n"
+        "**Directions** `GET /maps/api/directions/json` — `origin`, `destination` (lat,lng), "
+        "optional `waypoints` (`optimize:true|lat,lng|...` for TSP), `mode`/`vehicle` "
+        "(motorbike by default), returns Google shape incl. turn-by-turn `steps`.\n\n"
+        "**Distance Matrix** `GET /maps/api/distancematrix/json` — `origins`, `destinations` "
+        "(`|`-separated lat,lng).\n\n"
+        "**Geocoding** `GET /maps/api/geocode/json` — `address=` (forward) or `latlng=` (reverse); "
+        "optional `location=lat,lng` viewport bias, `normalize=1` for AI cleanup.\n\n"
+        "**Autocomplete** `GET /maps/api/place/autocomplete/json` — `input=`, optional `location=`.\n\n"
+        "**Fleet (native):** `GET /v1/isochrone?location=&contours=10,20`, "
+        "`GET /v1/snap?path=lat,lng|...`."
+    ),
+)
 
 API_KEY = os.environ.get("API_KEY", "")
 VALHALLA_URL = os.environ.get("VALHALLA_URL", "http://valhalla:8002").rstrip("/")
@@ -164,14 +181,15 @@ async def directions(request: Request):
     for i, leg in enumerate(trip["legs"]):
         summ = leg["summary"]
         meters, secs = summ["length"] * 1000, summ["time"]
+        leg_coords = decode(leg["shape"], precision=6)
+        coords.extend(leg_coords)
         legs.append({
             "distance": {"text": dist_text(meters), "value": round(meters)},
             "duration": {"text": dur_text(secs), "value": round(secs)},
             "start_location": pt(i),
             "end_location": pt(i + 1),
-            "steps": [],
+            "steps": build_steps(leg, leg_coords),
         })
-        coords.extend(decode(leg["shape"], precision=6))
 
     route = {"summary": "", "legs": legs,
              "overview_polyline": {"points": encode(coords, precision=5)}}
@@ -225,6 +243,42 @@ async def distance_matrix(request: Request):
         "destination_addresses": [f'{t["lat"]},{t["lon"]}' for t in targets],
         "rows": rows,
     }
+
+
+# Valhalla maneuver type -> Google directions `maneuver` string (best-effort).
+_MANEUVER = {
+    9: "turn-slight-right", 10: "turn-right", 11: "turn-sharp-right",
+    12: "uturn-right", 13: "uturn-left", 14: "turn-sharp-left", 15: "turn-left",
+    16: "turn-slight-left", 8: "straight", 17: "straight",
+    18: "ramp-right", 19: "ramp-left", 20: "ramp-right", 21: "ramp-left",
+    23: "fork-right", 24: "fork-left", 25: "merge",
+    26: "roundabout-right", 27: "roundabout-right",
+}
+
+
+def build_steps(leg: dict, leg_coords: list) -> list:
+    """Map Valhalla leg maneuvers -> Google Directions steps[]."""
+    steps = []
+    n = len(leg_coords)
+    for mv in leg.get("maneuvers", []):
+        bi = min(mv.get("begin_shape_index", 0), n - 1) if n else 0
+        ei = min(mv.get("end_shape_index", bi), n - 1) if n else 0
+        a = leg_coords[bi] if n else (0, 0)
+        b = leg_coords[ei] if n else (0, 0)
+        meters, secs = mv.get("length", 0) * 1000, mv.get("time", 0)
+        step = {
+            "html_instructions": mv.get("instruction", ""),
+            "distance": {"text": dist_text(meters), "value": round(meters)},
+            "duration": {"text": dur_text(secs), "value": round(secs)},
+            "start_location": {"lat": a[0], "lng": a[1]},
+            "end_location": {"lat": b[0], "lng": b[1]},
+            "polyline": {"points": encode(leg_coords[bi:ei + 1], precision=5)},
+        }
+        m = _MANEUVER.get(mv.get("type"))
+        if m:
+            step["maneuver"] = m
+        steps.append(step)
+    return steps
 
 
 def _bias_params(request: Request) -> dict:

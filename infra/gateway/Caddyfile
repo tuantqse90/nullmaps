@@ -33,6 +33,12 @@
 		reverse_proxy adapter:8000
 	}
 
+	# API docs (OpenAPI / Swagger UI / ReDoc) — read-only, ungated.
+	@docs path /docs* /openapi.json /redoc*
+	handle @docs {
+		reverse_proxy adapter:8000
+	}
+
 	# Tiles + glyphs (read-only basemap). Force X-Forwarded-Proto so Martin emits
 	# https TileJSON URLs behind TLS (otherwise the map blanks on mixed-content).
 	handle /tiles/* {
