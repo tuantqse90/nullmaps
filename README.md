@@ -79,7 +79,7 @@ docker compose -f docker-compose.yml up -d     # PROD: gateway only (engines int
 docker compose up -d                           # DEV: + override re-exposes engine ports for make *-test
 ```
 
-Deploy to Hetzner/Coolify: [`docs/runbook-deploy-coolify.md`](docs/runbook-deploy-coolify.md).
+Deploy to VPS: [`docs/runbook-deploy-vps.md`](docs/runbook-deploy-vps.md).
 CI (compose validation + py3.12 unit tests) runs on every push.
 
 ## Client SDK & API docs
@@ -98,7 +98,7 @@ nm.map(maplibregl, "map");                                                  // s
 ## Stack
 
 MapLibre GL JS · Planetiler · PMTiles · Martin · Valhalla · lightweight geocoder · FastAPI (Python 3.12)
-· LiteLLM · Caddy gateway. Docker Compose is the source of truth; deployed on **Hetzner via Coolify**.
+· LiteLLM · Caddy gateway. Docker Compose is the source of truth; deployed on a **VPS via plain `docker compose`**.
 
 ## Data
 

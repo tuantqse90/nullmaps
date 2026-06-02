@@ -36,7 +36,8 @@ opportunistically. Do **not** turn this into a data-collection company.
 
 ## Decisions already made (scaffold around these — do not relitigate)
 
-- **Self-hosted, Docker-first.** Deployed on **Hetzner via Coolify**. `docker-compose.yml` is the
+- **Self-hosted, Docker-first.** Prod runs **plain `docker compose` on a VPS** (currently Hostinger,
+  `/opt/nullmaps`, behind native Caddy); Coolify works as an alternative. `docker-compose.yml` is the
   source of truth for local + prod.
 - **Single beefy box** to start, not a cluster. Photon's Elasticsearch + Valhalla's tile graph +
   PostGIS are RAM-hungry. Vietnam-only keeps it manageable. **RAM/disk sizing is documented in the
