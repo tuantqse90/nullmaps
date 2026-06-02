@@ -12,12 +12,13 @@ services:
     image: ghcr.io/maplibre/martin:latest
     # route-prefix lets Caddy reverse-proxy Martin under /tiles so the browser
     # talks to a single origin (the demo) — avoids cross-origin/CORS failures.
-    command: ["--route-prefix", "/tiles", "--font", "/fonts", "/data/${PMTILES_FILE:-vietnam.pmtiles}"]
+    command: ["--route-prefix", "/tiles", "--font", "/fonts", "--sprite", "/sprites", "/data/${PMTILES_FILE:-vietnam.pmtiles}"]
     expose:
       - "3000"
     volumes:
       - ./data:/data:ro
-      - ./services/tiles/fonts:/fonts:ro   # self-hosted glyphs (make fonts)
+      - ./services/tiles/fonts:/fonts:ro       # self-hosted glyphs (make fonts)
+      - ./services/tiles/sprites:/sprites:ro   # POI icon sprites (Maki, brand-green)
     restart: unless-stopped
     mem_limit: 384m
     healthcheck:

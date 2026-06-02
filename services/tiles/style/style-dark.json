@@ -164,6 +164,34 @@
       "paint": {
         "fill-color": "#1b212b",
         "fill-outline-color": "#232a35"
+      },
+      "maxzoom": 15.0
+    },
+    {
+      "id": "building-3d",
+      "type": "fill-extrusion",
+      "source": "vn",
+      "source-layer": "building",
+      "minzoom": 15,
+      "paint": {
+        "fill-extrusion-color": "#222b38",
+        "fill-extrusion-height": [
+          "coalesce",
+          [
+            "get",
+            "render_height"
+          ],
+          3
+        ],
+        "fill-extrusion-base": [
+          "coalesce",
+          [
+            "get",
+            "render_min_height"
+          ],
+          0
+        ],
+        "fill-extrusion-opacity": 0.85
       }
     },
     {
@@ -332,8 +360,15 @@
       "layout": {
         "symbol-placement": "line",
         "text-field": [
-          "get",
-          "name"
+          "coalesce",
+          [
+            "get",
+            "name:vi"
+          ],
+          [
+            "get",
+            "name"
+          ]
         ],
         "text-font": [
           "Noto Sans Regular"
@@ -370,8 +405,15 @@
       "minzoom": 11,
       "layout": {
         "text-field": [
-          "get",
-          "name"
+          "coalesce",
+          [
+            "get",
+            "name:vi"
+          ],
+          [
+            "get",
+            "name"
+          ]
         ],
         "text-font": [
           "Noto Sans Regular"
@@ -405,8 +447,15 @@
       ],
       "layout": {
         "text-field": [
-          "get",
-          "name"
+          "coalesce",
+          [
+            "get",
+            "name:vi"
+          ],
+          [
+            "get",
+            "name"
+          ]
         ],
         "text-font": [
           "Noto Sans Bold"
@@ -432,6 +481,128 @@
       }
     },
     {
+      "id": "poi-icons",
+      "type": "symbol",
+      "source": "vn",
+      "source-layer": "poi",
+      "minzoom": 14,
+      "filter": [
+        "in",
+        [
+          "get",
+          "class"
+        ],
+        [
+          "literal",
+          [
+            "restaurant",
+            "cafe",
+            "fast_food",
+            "fuel",
+            "hospital",
+            "pharmacy",
+            "school",
+            "college",
+            "bank",
+            "lodging",
+            "parking",
+            "bus",
+            "grocery",
+            "supermarket",
+            "park",
+            "police",
+            "fire_station",
+            "place_of_worship",
+            "cinema",
+            "attraction",
+            "car"
+          ]
+        ]
+      ],
+      "layout": {
+        "icon-image": [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          "restaurant",
+          "restaurant",
+          "cafe",
+          "cafe",
+          "fast_food",
+          "fast-food",
+          "fuel",
+          "fuel",
+          "hospital",
+          "hospital",
+          "pharmacy",
+          "pharmacy",
+          "school",
+          "school",
+          "college",
+          "college",
+          "bank",
+          "bank",
+          "lodging",
+          "lodging",
+          "parking",
+          "parking",
+          "bus",
+          "bus",
+          "grocery",
+          "grocery",
+          "supermarket",
+          "grocery",
+          "park",
+          "park",
+          "police",
+          "police",
+          "fire_station",
+          "fire-station",
+          "place_of_worship",
+          "place-of-worship",
+          "cinema",
+          "cinema",
+          "attraction",
+          "attraction",
+          "car",
+          "car",
+          "attraction"
+        ],
+        "icon-size": 1,
+        "icon-optional": false,
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name:vi"
+          ],
+          [
+            "get",
+            "name"
+          ]
+        ],
+        "text-font": [
+          "Noto Sans Regular"
+        ],
+        "text-size": 10,
+        "text-offset": [
+          0,
+          1.2
+        ],
+        "text-anchor": "top",
+        "text-optional": true,
+        "icon-allow-overlap": false,
+        "text-allow-overlap": false
+      },
+      "paint": {
+        "text-color": "#9aa4b2",
+        "text-halo-color": "#0d1117",
+        "text-halo-width": 1.1
+      }
+    },
+    {
       "id": "sovereignty-label",
       "type": "symbol",
       "source": "sovereignty",
@@ -454,5 +625,6 @@
         "text-halo-width": 1.8
       }
     }
-  ]
+  ],
+  "sprite": "/tiles/sprite/sprites"
 }
