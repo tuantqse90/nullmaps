@@ -204,3 +204,7 @@ matrix-test: ## (Phase 2) Smoke-test a 2x2 distance matrix (costing=motor_scoote
 	  -d '{"sources":[{"lat":10.7725,"lon":106.6980},{"lat":10.7800,"lon":106.7010}],"targets":[{"lat":10.7626,"lon":106.6822},{"lat":10.7691,"lon":106.7000}],"costing":"motor_scooter","units":"kilometers"}' \
 	  | python3 -c "import sys,json; m=json.load(sys.stdin)['sources_to_targets']; print('>> matrix km:', [[c['distance'] for c in r] for r in m])" \
 	  || echo ">> Valhalla not ready — check: docker compose logs -f valhalla"
+
+.PHONY: backup-test
+backup-test: ## (ops) Verify the latest R2 backup is restorable (sqlite + pmtiles checks)
+	bash infra/restore-test.sh
