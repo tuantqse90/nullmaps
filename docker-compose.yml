@@ -54,11 +54,20 @@ services:
       - serve_tiles=True
     restart: unless-stopped
 
-  # --- Phase 3 (reserved): Photon geocoder ---------------------------------
-  # photon:
-  #   image: rtuszik/photon-docker:latest
-  #   ports: ["${PHOTON_PORT:-2322}:2322"]
-  #   volumes: [photon_data:/photon/photon_data]
+  # --- Phase 3: lightweight VN geocoder ------------------------------------
+  # Serves /geocode /reverse /autocomplete from a SQLite index (importer.py).
+  # "Good enough" for internal use; Photon is the heavier production option on a
+  # box with the RAM/disk for a Nominatim import (see services/geocoder/README).
+  # Build the index first:  make geo-index
+  geocoder:
+    build: ./services/geocoder
+    ports:
+      - "${GEOCODER_PORT:-2322}:2322"
+    volumes:
+      - ./services/geocoder/data:/data
+    environment:
+      - GEOCODER_DB=/data/geocoder.db
+    restart: unless-stopped
 
   # --- Phase 4: Google/Goong-compat FastAPI adapter ------------------------
   # Live: /maps/api/directions/json, /maps/api/distancematrix/json -> Valhalla.
@@ -71,9 +80,10 @@ services:
       - API_KEY=${API_KEY}
       - MARTIN_URL=http://martin:3000
       - VALHALLA_URL=http://valhalla:8002
-      - PHOTON_URL=http://photon:2322
+      - GEOCODER_URL=http://geocoder:2322
     depends_on:
       - valhalla
+      - geocoder
     restart: unless-stopped
 
   # --- Reserved: PostgreSQL + PostGIS --------------------------------------

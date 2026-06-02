@@ -1,7 +1,7 @@
 # services/adapter — Google/Goong-compat shim (Phase 4, REQUIRED)
 
-> **Status: live for Directions + Distance Matrix.** Geocoding + Autocomplete return
-> `503 UNAVAILABLE` until Phase 3 (Photon) is deployed. Runs on `:8010` (8000 collides locally).
+> **Status: all four endpoints live.** Directions + Matrix → Valhalla; Geocoding + Autocomplete →
+> the Phase-3 geocoder. Runs on `:8010` (8000 collides locally).
 
 **What:** A thin **FastAPI** shim that maps **Google Maps API** request/response shapes onto the native
 NullMaps engines (Martin, Valhalla, Photon).
@@ -38,8 +38,8 @@ Single shared `API_KEY` from env — check it on every request. No key managemen
 |---|---|---|
 | `GET /maps/api/directions/json` | Valhalla `/route` | **live** |
 | `GET /maps/api/distancematrix/json` | Valhalla `/sources_to_targets` | **live** |
-| `GET /maps/api/geocode/json` | Photon | 503 (Phase 3) |
-| `GET /maps/api/place/autocomplete/json` | Photon | 503 (Phase 3) |
+| `GET /maps/api/geocode/json` | geocoder `/geocode` (`address=`) or `/reverse` (`latlng=`) | **live** |
+| `GET /maps/api/place/autocomplete/json` | geocoder `/autocomplete` (`input=`) | **live** |
 | `GET /healthz` | — | open (no key) |
 
 **Travel mode → costing** (motorbike-first): unspecified / `two_wheeler` / `bike` / `scooter` →
@@ -53,12 +53,14 @@ Valhalla returns polyline precision-6 shapes; the adapter re-encodes to precisio
 
 ```bash
 docker compose up -d adapter
-make adapter-test     # directions + matrix (live) + geocode 503
+make adapter-test     # directions + matrix + geocode
 ```
 
-Verified (HCMC, against live Valhalla):
+Verified (HCMC, against the live stack):
 - Directions default = motorbike **5.4 km / 9 min**; `mode=driving` = **6.3 km** (mode mapping works)
-- 2×2 distance matrix all routable; geocode → 503; missing key → 403
+- 2×2 distance matrix all routable
+- geocode `address=nguyen hue` → Nguyễn Huệ; `latlng=10.7725,106.6980` → Chợ Bến Thành
+- autocomplete `input=ben thanh` → Bến Thành; missing key → 403
 
 ## Tests
 

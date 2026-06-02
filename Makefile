@@ -73,7 +73,32 @@ demo: ## Build tiles if missing, start services, print the demo URL
 	@echo ">> Demo:   http://localhost:$(DEMO_PORT)   (Ho Chi Minh City basemap)"
 	@echo ">> Martin: http://localhost:$(MARTIN_PORT)/catalog"
 
-ADAPTER_PORT ?= 8010
+ADAPTER_PORT  ?= 8010
+GEOCODER_PORT ?= 2322
+
+.PHONY: geo-index
+geo-index: $(PBF) ## (Phase 3) Build the VN geocoder SQLite index from the OSM extract
+	docker compose build geocoder
+	@mkdir -p services/geocoder/data
+	@echo ">> indexing (pyosmium, a few minutes)..."
+	docker run --rm \
+	  -v "$(abspath $(RAW_DIR)):/raw:ro" \
+	  -v "$(abspath services/geocoder/data):/data" \
+	  nullmap-geocoder python importer.py /raw/vietnam-latest.osm.pbf /data/geocoder.db
+	docker compose up -d geocoder
+
+.PHONY: geo-test
+geo-test: ## (Phase 3) Smoke-test geocode / autocomplete / reverse
+	@P=$(GEOCODER_PORT); \
+	echo ">> autocomplete 'ben thanh':"; \
+	curl -fsS "http://localhost:$$P/autocomplete?q=ben+thanh&limit=3" \
+	  | python3 -c "import sys,json;[print('   ',r['name'],'('+r['kind']+')',round(r['lat'],4),round(r['lon'],4)) for r in json.load(sys.stdin)['results']]"; \
+	echo ">> geocode 'nguyen hue' (diacritic-folded):"; \
+	curl -fsS "http://localhost:$$P/geocode?q=nguyen+hue&limit=2" \
+	  | python3 -c "import sys,json;[print('   ',r['name']) for r in json.load(sys.stdin)['results']]"; \
+	echo ">> reverse 10.7725,106.6980:"; \
+	curl -fsS "http://localhost:$$P/reverse?lat=10.7725&lon=106.6980" \
+	  | python3 -c "import sys,json;r=json.load(sys.stdin)['result'];print('   ',r['name'] if r else None, (str(r['distance_m'])+'m') if r else '')"
 
 .PHONY: adapter-test
 adapter-test: ## (Phase 4) Smoke-test the Google-compat adapter (Directions+Matrix live, geocode pending)
@@ -84,8 +109,12 @@ adapter-test: ## (Phase 4) Smoke-test the Google-compat adapter (Directions+Matr
 	echo ">> distancematrix (2x2):"; \
 	curl -fsS "http://localhost:$$P/maps/api/distancematrix/json?origins=10.7725,106.6980|10.7800,106.7010&destinations=10.7626,106.6822|10.7691,106.7000&key=$$K" \
 	  | python3 -c "import sys,json;b=json.load(sys.stdin);print('   ',[[e.get('distance',{}).get('text','-') for e in r['elements']] for r in b['rows']])"; \
-	echo ">> geocode (expect 503 until Phase 3):"; \
-	curl -s -o /dev/null -w "    HTTP %{http_code}\n" "http://localhost:$$P/maps/api/geocode/json?address=x&key=$$K"
+	echo ">> geocode (address=nguyen hue):"; \
+	curl -fsS "http://localhost:$$P/maps/api/geocode/json?address=nguyen+hue&key=$$K" \
+	  | python3 -c "import sys,json;r=json.load(sys.stdin)['results'][0];print('   ',r['formatted_address'],r['geometry']['location'])"; \
+	echo ">> autocomplete (input=ben thanh):"; \
+	curl -fsS "http://localhost:$$P/maps/api/place/autocomplete/json?input=ben+thanh&key=$$K" \
+	  | python3 -c "import sys,json;[print('   ',p['description']) for p in json.load(sys.stdin)['predictions'][:2]]"
 
 .PHONY: smoke
 smoke: ## Verify the whole live stack (tiles + routing + adapter) end-to-end
@@ -93,6 +122,7 @@ smoke: ## Verify the whole live stack (tiles + routing + adapter) end-to-end
 	curl -fsS -o /dev/null -w "  TileJSON HTTP %{http_code}\n" http://localhost:$(DEMO_PORT)/tiles/vietnam ; \
 	curl -fsS -o /dev/null -w "  demo page HTTP %{http_code}\n" http://localhost:$(DEMO_PORT)/ ; \
 	echo "== routing ==" ; $(MAKE) -s route-test ; $(MAKE) -s matrix-test ; \
+	echo "== geocoder ==" ; $(MAKE) -s geo-test ; \
 	echo "== adapter ==" ; $(MAKE) -s adapter-test
 
 DEMO_PORT ?= 8080

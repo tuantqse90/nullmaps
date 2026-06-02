@@ -29,8 +29,8 @@ opportunistically. Do **not** turn this into a data-collection company.
 | Map tiles + web SDK | Planetiler → PMTiles, served by Martin; MapLibre GL JS | 1 |
 | Directions (motorbike-first) | Valhalla (`motor_scooter`/`motorcycle`) | 2 |
 | Distance Matrix (many-to-many) | Valhalla `/matrix` | 2 |
-| Geocoding / Reverse | Photon (OSM + Elasticsearch) | 3 |
-| Autocomplete / Places | Photon typeahead | 3 |
+| Geocoding / Reverse | lightweight pyosmium+SQLite (Photon for prod) | 3 |
+| Autocomplete / Places | same geocoder, diacritic-folded typeahead | 3 |
 | Google/Goong-compat API | FastAPI adapter shim | 4 |
 | AI address normalization | LiteLLM → Qwen (optional) | 5 |
 
@@ -61,8 +61,11 @@ opportunistically. Do **not** turn this into a data-collection company.
   regional extracts.
 - **Routing + Matrix:** **Valhalla**, motorbike costing required (`motor_scooter`/`motorcycle`).
   Graph built from the same VN extract. Endpoints `/route`, `/matrix`.
-- **Geocoding + Autocomplete:** **Photon** (typeahead-friendly, partial-token + diacritic folding for
-  VN). Pelias only if Photon proves insufficient.
+- **Geocoding + Autocomplete:** **Photon** is the chosen production engine. On the dev box (disk/RAM
+  too small for a Nominatim import) Phase 3 ships a **lightweight substitute**: `pyosmium` extracts
+  named features from the VN extract into a SQLite **FTS5 + R*Tree** index (diacritic-folded),
+  served by a small FastAPI service. "Good enough" for internal typeahead/reverse; swap in Photon on
+  the Hetzner box when prominence-ranked forward geocoding matters. Pelias only if both fall short.
 - **Data store:** PostgreSQL + PostGIS (plus whatever Valhalla/Photon manage internally).
 - **Adapter (REQUIRED):** thin **FastAPI** shim mapping Google Maps request/response shapes onto the
   native engines. Implement **only the endpoints my apps actually use — ask which ones at Phase 4.**

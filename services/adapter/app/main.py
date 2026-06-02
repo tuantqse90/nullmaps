@@ -29,7 +29,7 @@ app = FastAPI(title="NullMaps Adapter", version="0.4.0")
 
 API_KEY = os.environ.get("API_KEY", "")
 VALHALLA_URL = os.environ.get("VALHALLA_URL", "http://valhalla:8002").rstrip("/")
-PHOTON_URL = os.environ.get("PHOTON_URL", "http://photon:2322").rstrip("/")
+GEOCODER_URL = os.environ.get("GEOCODER_URL", "http://geocoder:2322").rstrip("/")
 
 # Google travel modes / Goong vehicle -> Valhalla costing. Motorbike-first: an
 # unspecified or two-wheeler mode routes as a scooter (NullMaps' primary use case).
@@ -90,14 +90,23 @@ async def valhalla(path: str, payload: dict) -> dict:
     return r.json() if r.content else {}
 
 
+async def geocoder(path: str, params: dict) -> dict:
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            r = await client.get(f"{GEOCODER_URL}{path}", params=params)
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=502, detail=f"geocoder unreachable: {e}")
+    return r.json() if r.content else {}
+
+
 @app.get("/healthz")
 def healthz() -> dict:
     return {
         "status": "ok",
         "service": "nullmaps-adapter",
         "phase": 4,
-        "live": ["directions", "distancematrix"],
-        "pending": ["geocode", "place/autocomplete"],
+        "live": ["directions", "distancematrix", "geocode", "place/autocomplete"],
+        "pending": [],
     }
 
 
@@ -192,22 +201,65 @@ async def distance_matrix(request: Request):
     }
 
 
-def _pending(name: str):
-    return JSONResponse(
-        {"status": "UNAVAILABLE",
-         "error_message": f"{name} requires Phase 3 (Photon geocoder), not yet deployed. "
-                          f"Routing/tiles are live; see CLAUDE.md roadmap."},
-        status_code=503,
-    )
+def _feature_types(kind: str) -> list[str]:
+    return {"place": ["locality", "political"], "street": ["route"],
+            "poi": ["point_of_interest", "establishment"],
+            "address": ["street_address"]}.get(kind, ["establishment"])
 
 
 @app.get("/maps/api/geocode/json")
 async def geocode(request: Request):
+    """Google Geocoding shape. ?address=... forward; ?latlng=lat,lng reverse."""
     require_key(request)
-    return _pending("Geocoding")
+    latlng = request.query_params.get("latlng")
+    if latlng:
+        loc = parse_latlng(latlng)
+        data = await geocoder("/reverse", {"lat": loc["lat"], "lon": loc["lon"]})
+        r = data.get("result")
+        if not r:
+            return {"status": "ZERO_RESULTS", "results": []}
+        results = [r]
+    else:
+        address = request.query_params.get("address")
+        if not address:
+            return JSONResponse({"status": "INVALID_REQUEST", "results": []}, status_code=400)
+        data = await geocoder("/geocode", {"q": address, "limit": 5})
+        results = data.get("results", [])
+        if not results:
+            return {"status": "ZERO_RESULTS", "results": []}
+
+    return {
+        "status": "OK",
+        "results": [{
+            "formatted_address": ", ".join(filter(None, [r["name"], r.get("extra")])),
+            "geometry": {"location": {"lat": r["lat"], "lng": r["lon"]},
+                         "location_type": "APPROXIMATE"},
+            "types": _feature_types(r.get("kind", "")),
+            "place_id": r.get("osm_id", ""),
+        } for r in results],
+    }
 
 
 @app.get("/maps/api/place/autocomplete/json")
 async def autocomplete(request: Request):
+    """Google Places Autocomplete shape -> geocoder typeahead."""
     require_key(request)
-    return _pending("Places Autocomplete")
+    text = request.query_params.get("input")
+    if not text:
+        return JSONResponse({"status": "INVALID_REQUEST", "predictions": []}, status_code=400)
+    data = await geocoder("/autocomplete", {"q": text, "limit": 8})
+    preds = data.get("results", [])
+    if not preds:
+        return {"status": "ZERO_RESULTS", "predictions": []}
+    return {
+        "status": "OK",
+        "predictions": [{
+            "description": ", ".join(filter(None, [p["name"], p.get("extra")])),
+            "place_id": p.get("osm_id", ""),
+            "structured_formatting": {
+                "main_text": p["name"],
+                "secondary_text": p.get("extra", ""),
+            },
+            "types": _feature_types(p.get("kind", "")),
+        } for p in preds],
+    }

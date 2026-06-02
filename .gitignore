@@ -11,6 +11,9 @@ valhalla_tiles/
 valhalla_tiles.tar
 # Valhalla graph + working pbf (Phase 2)
 services/routing/custom_files/
+# Geocoder SQLite index (Phase 3) — build artifact
+services/geocoder/data/
+*.db
 
 # Tooling state
 .claude/

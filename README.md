@@ -36,9 +36,19 @@ docker compose up -d adapter      # :8010
 make adapter-test                 # Directions + Matrix (live), geocode 503 (pending Phase 3)
 ```
 
-Drop-in Google shapes: `GET /maps/api/directions/json`, `/distancematrix/json` (auth via `?key=` or
-`X-API-Key`). Motorbike-first by default. Geocoding/Autocomplete arrive with Phase 3.
-See [`services/adapter/README.md`](services/adapter/README.md).
+Drop-in Google shapes (auth via `?key=` or `X-API-Key`), motorbike-first by default:
+`directions/json`, `distancematrix/json`, `geocode/json` (`address=` or `latlng=`),
+`place/autocomplete/json`. See [`services/adapter/README.md`](services/adapter/README.md).
+
+## Geocoding (Phase 3 — lightweight, internal-use)
+
+```bash
+make geo-index    # build the VN SQLite index + start the geocoder (:2322)
+make geo-test     # autocomplete / geocode / reverse
+```
+
+~308k named VN features, diacritic-folded. "Good enough," not Photon — see
+[`services/geocoder/README.md`](services/geocoder/README.md) for the ranking caveat.
 
 ## Roadmap
 
@@ -46,8 +56,8 @@ See [`services/adapter/README.md`](services/adapter/README.md).
 |---|---|---|---|
 | 1 | Tiles + MapLibre SDK | Planetiler → PMTiles → Martin | **done** |
 | 2 | Directions + Matrix (motorbike-first) | Valhalla | **done** |
-| 3 | Geocoding / Reverse / Autocomplete | Photon | scaffolded |
-| 4 | Google/Goong-compat API (**required**) | FastAPI adapter | **partial** (Directions+Matrix live; geocoding pending Phase 3) |
+| 3 | Geocoding / Reverse / Autocomplete | lightweight (pyosmium+SQLite); Photon for prod | **done** |
+| 4 | Google/Goong-compat API (**required**) | FastAPI adapter | **done** (all 4 endpoints live) |
 | 5 | AI address helper (optional) | LiteLLM → Qwen | future |
 
 ## Stack
