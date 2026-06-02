@@ -42,6 +42,16 @@ Single shared `API_KEY` from env — check it on every request. No key managemen
 | `GET /maps/api/place/autocomplete/json` | geocoder `/autocomplete` (`input=`) | **live** |
 | `GET /healthz` | — | open (no key) |
 
+**Fleet extensions (NullMaps-native, no Google equivalent):**
+
+| Endpoint | Maps to | Use |
+|---|---|---|
+| `GET /maps/api/directions/json` + `waypoints=optimize:true\|...` | Valhalla `/optimized_route` | multi-stop TSP; returns `waypoint_order` |
+| `GET /v1/isochrone?location=&contours=10,20&mode=` | Valhalla `/isochrone` | reachability polygons (GeoJSON) |
+| `GET /v1/snap?path=lat,lng\|...&mode=` | Valhalla `/trace_route` | snap-to-roads / map-matching |
+
+`make fleet-test` exercises all three.
+
 **Optional AI cleanup (Phase 5):** add `&normalize=1` to geocode/autocomplete to route the query
 through the normalizer service first (no-op unless an LLM is configured). Fail-open.
 

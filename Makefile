@@ -129,6 +129,19 @@ norm-test: ## (Phase 5) Check the AI normalizer (no-op until an LLM is configure
 	curl -fsS "http://localhost:$(NORMALIZER_PORT)/normalize?q=Q1+P.Ben+Nghe" \
 	  | python3 -c "import sys,json;d=json.load(sys.stdin);print('   ',repr(d['original']),'->',repr(d['normalized']),'('+d['engine']+')')"
 
+.PHONY: fleet-test
+fleet-test: ## (fleet) Optimized multi-stop route, isochrone, snap-to-roads
+	@K=$$(grep -E '^API_KEY=' .env | cut -d= -f2); P=$(ADAPTER_PORT); \
+	echo ">> optimized 4-stop (waypoints=optimize:true):"; \
+	curl -fsS "http://localhost:$$P/maps/api/directions/json?origin=10.7725,106.6980&destination=10.7951,106.7218&waypoints=optimize:true%7C10.8231,106.6297%7C10.7546,106.6655&key=$$K" \
+	  | python3 -c "import sys,json;r=json.load(sys.stdin)['routes'][0];print('   legs',len(r['legs']),'order',r.get('waypoint_order'))"; \
+	echo ">> isochrone (10,20 min):"; \
+	curl -fsS "http://localhost:$$P/v1/isochrone?location=10.7725,106.6980&contours=10,20&key=$$K" \
+	  | python3 -c "import sys,json;g=json.load(sys.stdin);print('   contour polygons:',len(g['features']))"; \
+	echo ">> snap-to-roads (3 pts):"; \
+	curl -fsS "http://localhost:$$P/v1/snap?path=10.7725,106.6980%7C10.7760,106.7000%7C10.7800,106.7010&key=$$K" \
+	  | python3 -c "import sys,json;d=json.load(sys.stdin);print('   matched',d['distance']['text'],d['duration']['text'])"
+
 .PHONY: smoke
 smoke: ## Verify the whole live stack (tiles + routing + adapter) end-to-end
 	@echo "== tiles ==" ; \

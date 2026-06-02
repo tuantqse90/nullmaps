@@ -121,55 +121,66 @@ def healthz() -> dict:
         "service": "nullmaps-adapter",
         "phase": 4,
         "live": ["directions", "distancematrix", "geocode", "place/autocomplete"],
+        "native": ["v1/isochrone", "v1/snap", "directions optimize:true"],
         "pending": [],
     }
 
 
 @app.get("/maps/api/directions/json")
 async def directions(request: Request):
+    """Google Directions shape. `waypoints=optimize:true|lat,lng|...` reorders the
+    intermediate stops (Valhalla /optimized_route = TSP) and returns waypoint_order."""
     require_key(request)
     origin = request.query_params.get("origin")
     destination = request.query_params.get("destination")
     if not origin or not destination:
         return JSONResponse({"status": "INVALID_REQUEST", "routes": []}, status_code=400)
-    locs = [parse_latlng(origin)]
-    # Google waypoints: "via:lat,lng|lat,lng" or "lat,lng|lat,lng"
-    for wp in filter(None, (request.query_params.get("waypoints") or "").split("|")):
-        locs.append(parse_latlng(wp.replace("via:", "")))
-    locs.append(parse_latlng(destination))
 
-    data = await valhalla("/route", {
-        "locations": locs,
-        "costing": costing_for(request),
-        "units": "kilometers",
+    segs = [s for s in (request.query_params.get("waypoints") or "").split("|") if s]
+    optimize = False
+    if segs and segs[0].startswith("optimize:"):
+        optimize = segs[0].split(":", 1)[1].lower() == "true"
+        segs = segs[1:]
+    mids = [parse_latlng(s.replace("via:", "")) for s in segs]
+    locs = [parse_latlng(origin), *mids, parse_latlng(destination)]
+
+    endpoint = "/optimized_route" if (optimize and len(mids) >= 1) else "/route"
+    data = await valhalla(endpoint, {
+        "locations": locs, "costing": costing_for(request), "units": "kilometers",
     })
     trip = data.get("trip")
     if not trip or trip.get("status") != 0:
         return JSONResponse({"status": "ZERO_RESULTS", "routes": [],
                              "error_message": data.get("error", "")}, status_code=200)
 
+    # Visiting order (optimized_route reorders; each location carries original_index)
+    visit = trip.get("locations", locs)
+
+    def pt(i):
+        v = visit[i]
+        return {"lat": v["lat"], "lng": v.get("lon", v.get("lng"))}
+
     legs, coords = [], []
     for i, leg in enumerate(trip["legs"]):
         summ = leg["summary"]
         meters, secs = summ["length"] * 1000, summ["time"]
-        a, b = locs[i], locs[i + 1]
         legs.append({
             "distance": {"text": dist_text(meters), "value": round(meters)},
             "duration": {"text": dur_text(secs), "value": round(secs)},
-            "start_location": {"lat": a["lat"], "lng": a["lon"]},
-            "end_location": {"lat": b["lat"], "lng": b["lon"]},
+            "start_location": pt(i),
+            "end_location": pt(i + 1),
             "steps": [],
         })
         coords.extend(decode(leg["shape"], precision=6))
 
-    return {
-        "status": "OK",
-        "routes": [{
-            "summary": "",
-            "legs": legs,
-            "overview_polyline": {"points": encode(coords, precision=5)},
-        }],
-    }
+    route = {"summary": "", "legs": legs,
+             "overview_polyline": {"points": encode(coords, precision=5)}}
+    if optimize:
+        # order of the intermediate waypoints by their original index (0-based)
+        order = [v["original_index"] - 1 for v in visit[1:-1]
+                 if v.get("original_index", 0) not in (0, len(locs) - 1)]
+        route["waypoint_order"] = order
+    return {"status": "OK", "routes": [route]}
 
 
 @app.get("/maps/api/distancematrix/json")
@@ -298,4 +309,53 @@ async def autocomplete(request: Request):
             },
             "types": _feature_types(p.get("kind", "")),
         } for p in preds],
+    }
+
+
+# --- NullMaps-native fleet extensions (no Google equivalent) ------------------
+
+@app.get("/v1/isochrone")
+async def isochrone(request: Request):
+    """Reachability polygons. ?location=lat,lng&contours=10,20 (minutes)&mode=...
+    Returns Valhalla GeoJSON (FeatureCollection of contour polygons)."""
+    require_key(request)
+    loc = request.query_params.get("location")
+    if not loc:
+        return JSONResponse({"status": "INVALID_REQUEST"}, status_code=400)
+    mins = [float(m) for m in (request.query_params.get("contours") or "15").split(",") if m]
+    data = await valhalla("/isochrone", {
+        "locations": [parse_latlng(loc)],
+        "costing": costing_for(request),
+        "contours": [{"time": m} for m in mins],
+        "polygons": True,
+    })
+    return data
+
+
+@app.get("/v1/snap")
+async def snap(request: Request):
+    """Snap-to-roads / map-matching. ?path=lat,lng|lat,lng|...&mode=...
+    Returns the matched route distance/duration + encoded polyline."""
+    require_key(request)
+    path = request.query_params.get("path")
+    if not path:
+        return JSONResponse({"status": "INVALID_REQUEST"}, status_code=400)
+    shape = [parse_latlng(p) for p in path.split("|") if p]
+    data = await valhalla("/trace_route", {
+        "shape": shape, "costing": costing_for(request),
+        "shape_match": "map_snap", "units": "kilometers",
+    })
+    trip = data.get("trip")
+    if not trip or trip.get("status") != 0:
+        return JSONResponse({"status": "ZERO_RESULTS",
+                             "error_message": data.get("error", "")}, status_code=200)
+    coords = []
+    for leg in trip["legs"]:
+        coords.extend(decode(leg["shape"], precision=6))
+    s = trip["summary"]
+    return {
+        "status": "OK",
+        "distance": {"text": dist_text(s["length"] * 1000), "value": round(s["length"] * 1000)},
+        "duration": {"text": dur_text(s["time"]), "value": round(s["time"])},
+        "snapped_polyline": {"points": encode(coords, precision=5)},
     }
