@@ -48,6 +48,10 @@
       "type": "raster",
       "url": "/tiles/hillshade",
       "tileSize": 256
+    },
+    "contours": {
+      "type": "vector",
+      "url": "/tiles/contours"
     }
   },
   "layers": [
@@ -207,6 +211,126 @@
           0
         ],
         "fill-extrusion-opacity": 0.85
+      }
+    },
+    {
+      "id": "contour-line",
+      "type": "line",
+      "source": "contours",
+      "source-layer": "contour",
+      "minzoom": 11,
+      "filter": [
+        "!=",
+        [
+          "%",
+          [
+            "to-number",
+            [
+              "get",
+              "elev"
+            ]
+          ],
+          500
+        ],
+        0
+      ],
+      "paint": {
+        "line-color": "#6b5e4a",
+        "line-opacity": 0.35,
+        "line-width": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          11,
+          0.3,
+          15,
+          0.8
+        ]
+      }
+    },
+    {
+      "id": "contour-index",
+      "type": "line",
+      "source": "contours",
+      "source-layer": "contour",
+      "minzoom": 11,
+      "filter": [
+        "==",
+        [
+          "%",
+          [
+            "to-number",
+            [
+              "get",
+              "elev"
+            ]
+          ],
+          500
+        ],
+        0
+      ],
+      "paint": {
+        "line-color": "#6b5e4a",
+        "line-opacity": 0.5,
+        "line-width": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          11,
+          0.6,
+          15,
+          1.4
+        ]
+      }
+    },
+    {
+      "id": "contour-label",
+      "type": "symbol",
+      "source": "contours",
+      "source-layer": "contour",
+      "minzoom": 13,
+      "filter": [
+        "==",
+        [
+          "%",
+          [
+            "to-number",
+            [
+              "get",
+              "elev"
+            ]
+          ],
+          500
+        ],
+        0
+      ],
+      "layout": {
+        "symbol-placement": "line",
+        "text-field": [
+          "concat",
+          [
+            "get",
+            "elev"
+          ],
+          " m"
+        ],
+        "text-font": [
+          "Noto Sans Regular"
+        ],
+        "text-size": 9
+      },
+      "paint": {
+        "text-color": "#7a6a52",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1
       }
     },
     {
