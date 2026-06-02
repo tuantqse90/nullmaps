@@ -49,6 +49,28 @@ def classify(tags) -> str | None:
     return None
 
 
+# Higher = more prominent. Drives forward-geocode ranking so a name shared by
+# many places resolves to the most important one (e.g. the big-city street).
+PLACE_WEIGHT = {"city": 100, "municipality": 95, "town": 70, "borough": 60,
+                "suburb": 50, "quarter": 40, "village": 40, "neighbourhood": 30,
+                "hamlet": 20, "locality": 15}
+
+
+def importance(tags, kind: str) -> int:
+    score = {"place": 30, "street": 10, "poi": 5, "address": 3}.get(kind, 0)
+    if kind == "place":
+        score = max(score, PLACE_WEIGHT.get(tags.get("place", ""), 20))
+    pop = tags.get("population", "")
+    if pop.replace(".", "").isdigit():
+        # log10-ish without importing math: digits of the population
+        score += min(40, (len(pop.split(".")[0]) - 1) * 8)
+    if "wikidata" in tags or "wikipedia" in tags:
+        score += 20          # documented => notable
+    if tags.get("capital") in ("yes", "2", "3", "4"):
+        score += 25
+    return score
+
+
 class Handler(osmium.SimpleHandler):
     def __init__(self, db: sqlite3.Connection):
         super().__init__()
@@ -64,15 +86,16 @@ class Handler(osmium.SimpleHandler):
         if kind is None:
             return
         extra = tags.get("addr:city") or tags.get("addr:district") or ""
-        self.batch.append((osm_id, name, fold(name), kind, lat, lon, extra))
+        self.batch.append((osm_id, name, fold(name), kind, lat, lon, extra,
+                           importance(tags, kind)))
         self.count += 1
         if len(self.batch) >= 5000:
             self._flush()
 
     def _flush(self):
         self.db.executemany(
-            "INSERT INTO features(osm_id,name,folded,kind,lat,lon,extra) "
-            "VALUES (?,?,?,?,?,?,?)", self.batch)
+            "INSERT INTO features(osm_id,name,folded,kind,lat,lon,extra,importance) "
+            "VALUES (?,?,?,?,?,?,?,?)", self.batch)
         self.batch.clear()
 
     def node(self, n):
@@ -96,10 +119,12 @@ class Handler(osmium.SimpleHandler):
 def build(pbf: str, out: str) -> int:
     db = sqlite3.connect(out)
     db.executescript("""
+        DROP TABLE IF EXISTS features_fts;
+        DROP TABLE IF EXISTS features_rtree;
         DROP TABLE IF EXISTS features;
         CREATE TABLE features(
           id INTEGER PRIMARY KEY, osm_id TEXT, name TEXT, folded TEXT,
-          kind TEXT, lat REAL, lon REAL, extra TEXT);
+          kind TEXT, lat REAL, lon REAL, extra TEXT, importance INTEGER DEFAULT 0);
     """)
     h = Handler(db)
     h.apply_file(pbf, locations=True, idx="flex_mem")

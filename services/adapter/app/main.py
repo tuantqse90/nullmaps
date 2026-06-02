@@ -216,6 +216,18 @@ async def distance_matrix(request: Request):
     }
 
 
+def _bias_params(request: Request) -> dict:
+    """Google-style viewport bias: ?location=lat,lng -> geocoder lat/lon."""
+    loc = request.query_params.get("location") or request.query_params.get("locationbias")
+    if not loc:
+        return {}
+    try:
+        b = parse_latlng(loc.replace("circle:", "").split("@")[-1])
+        return {"lat": b["lat"], "lon": b["lon"]}
+    except HTTPException:
+        return {}
+
+
 def _feature_types(kind: str) -> list[str]:
     return {"place": ["locality", "political"], "street": ["route"],
             "poi": ["point_of_interest", "establishment"],
@@ -239,7 +251,9 @@ async def geocode(request: Request):
         if not address:
             return JSONResponse({"status": "INVALID_REQUEST", "results": []}, status_code=400)
         address = await maybe_normalize(request, address)
-        data = await geocoder("/geocode", {"q": address, "limit": 5})
+        params = {"q": address, "limit": 5}
+        params.update(_bias_params(request))
+        data = await geocoder("/geocode", params)
         results = data.get("results", [])
         if not results:
             return {"status": "ZERO_RESULTS", "results": []}
@@ -258,13 +272,18 @@ async def geocode(request: Request):
 
 @app.get("/maps/api/place/autocomplete/json")
 async def autocomplete(request: Request):
-    """Google Places Autocomplete shape -> geocoder typeahead."""
+    """Google Places Autocomplete shape -> geocoder typeahead.
+
+    Supports ?location=lat,lng viewport bias and opt-in ?normalize=1.
+    """
     require_key(request)
     text = request.query_params.get("input")
     if not text:
         return JSONResponse({"status": "INVALID_REQUEST", "predictions": []}, status_code=400)
     text = await maybe_normalize(request, text)
-    data = await geocoder("/autocomplete", {"q": text, "limit": 8})
+    params = {"q": text, "limit": 8}
+    params.update(_bias_params(request))
+    data = await geocoder("/autocomplete", params)
     preds = data.get("results", [])
     if not preds:
         return {"status": "ZERO_RESULTS", "predictions": []}

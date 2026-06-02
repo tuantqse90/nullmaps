@@ -44,30 +44,42 @@ def fts_match(q: str) -> str:
     return " ".join(f'"{t}"*' for t in toks)
 
 
-def search(q: str, limit: int) -> list[dict]:
+# Bias strength: penalty (in "importance points") per km from the bias point.
+# ~4 means a result 25 km away loses ~100 pts — roughly one whole city tier.
+BIAS_PER_KM = 4.0
+
+
+def search(q: str, limit: int, bias: tuple[float, float] | None = None) -> list[dict]:
     match = fts_match(q)
     if not match:
         return []
     rows = db().execute(
         """SELECT f.osm_id, f.name, f.folded, f.kind, f.lat, f.lon, f.extra,
-                  bm25(features_fts) AS r
+                  f.importance, bm25(features_fts) AS r
            FROM features_fts JOIN features f ON f.id = features_fts.rowid
            WHERE features_fts MATCH ?
            ORDER BY r LIMIT ?""",
-        (match, limit * 8),
+        (match, limit * 12),
     ).fetchall()
     qf = fold(q)
     out = [dict(r) for r in rows]
-    # Rank: exact folded match, then prefix match, then place>street>poi, then bm25.
-    # Lifts "Bến Thành" (== query) above fuzzy "Thạnh Bền".
-    out.sort(key=lambda x: (
-        0 if x["folded"] == qf else 1,
-        0 if x["folded"].startswith(qf) else 1,
-        KIND_RANK.get(x["kind"], 9),
-        x["r"],
-    ))
+
+    def rank(x) -> tuple:
+        penalty = 0.0
+        if bias is not None:
+            penalty = haversine(bias[0], bias[1], x["lat"], x["lon"]) / 1000.0 * BIAS_PER_KM
+        # exact match first, then prefix, then most-prominent-and-nearest, then bm25
+        return (
+            0 if x["folded"] == qf else 1,
+            0 if x["folded"].startswith(qf) else 1,
+            -(x["importance"]) + penalty,
+            x["r"],
+        )
+
+    out.sort(key=rank)
     for x in out:
         x.pop("folded", None)
+        x.pop("importance", None)
     return out[:limit]
 
 
@@ -89,14 +101,20 @@ def healthz() -> dict:
         return {"status": "error", "detail": str(e)}
 
 
+def _bias(lat: float | None, lon: float | None) -> tuple[float, float] | None:
+    return (lat, lon) if lat is not None and lon is not None else None
+
+
 @app.get("/autocomplete")
-def autocomplete(q: str = Query(...), limit: int = 8) -> dict:
-    return {"query": q, "results": search(q, min(limit, 20))}
+def autocomplete(q: str = Query(...), limit: int = 8,
+                 lat: float | None = None, lon: float | None = None) -> dict:
+    return {"query": q, "results": search(q, min(limit, 20), _bias(lat, lon))}
 
 
 @app.get("/geocode")
-def geocode(q: str = Query(...), limit: int = 5) -> dict:
-    return {"query": q, "results": search(q, min(limit, 20))}
+def geocode(q: str = Query(...), limit: int = 5,
+            lat: float | None = None, lon: float | None = None) -> dict:
+    return {"query": q, "results": search(q, min(limit, 20), _bias(lat, lon))}
 
 
 @app.get("/reverse")

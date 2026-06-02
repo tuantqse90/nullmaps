@@ -33,8 +33,8 @@ make geo-test      # autocomplete / geocode / reverse smoke test
 
 | Endpoint | Use |
 |---|---|
-| `GET /autocomplete?q=&limit=` | typeahead; diacritic-folded prefix match |
-| `GET /geocode?q=&limit=` | forward geocode (best matches) |
+| `GET /autocomplete?q=&limit=&lat=&lon=` | typeahead; diacritic-folded; optional viewport bias |
+| `GET /geocode?q=&limit=&lat=&lon=` | forward geocode; optional viewport bias |
 | `GET /reverse?lat=&lon=` | nearest named feature (R*Tree → haversine) |
 | `GET /healthz` | feature count |
 
@@ -44,12 +44,19 @@ make geo-test      # autocomplete / geocode / reverse smoke test
 - `geocode=nguyen hue` → **Nguyễn Huệ** (folded match)
 - `reverse=10.7725,106.6980` → **Chợ Bến Thành, 7.6 m** away
 
-## Ranking (known limitation)
+## Ranking
 
-Order = exact folded match → prefix match → place > street > POI → BM25. There is **no
-importance/population signal**, so forward-geocoding a name shared by many places (e.g. "Nguyễn Huệ"
-exists in many cities) returns *a* correct match, not necessarily the most prominent one. Reverse
-geocoding and typeahead are strong; prominence-ranked forward geocoding is where Photon would win.
+Order = exact folded match → prefix match → **most prominent & nearest** → BM25.
+
+- **Prominence** (`importance` column, set at import): place type (city > town > village…), a
+  population boost, +20 if the feature has wikidata/wikipedia, +25 for capitals. Lifts the big-city
+  result for a name shared by many places.
+- **Viewport bias** (optional `lat`/`lon`): a per-km penalty (~4 pts/km) pulls results toward a point.
+  So `nguyen hue` with `lat=10.776&lon=106.700` returns the **HCMC** one; without bias it returns the
+  most prominent (a northern locality). Reverse + typeahead remain strong.
+
+Still lighter than Photon (no full address interpolation / global importance model), but the common
+"which Nguyễn Huệ" ambiguity is resolved when the caller passes a location.
 
 ## Rebuild
 

@@ -81,10 +81,14 @@ geo-index: $(PBF) ## (Phase 3) Build the VN geocoder SQLite index from the OSM e
 	docker compose build geocoder
 	@mkdir -p services/geocoder/data
 	@echo ">> indexing (pyosmium, a few minutes)..."
+	@# Build the DB on the container fs (SQLite + virtiofs bind-mount = I/O errors),
+	@# then copy the finished file to the mounted volume.
 	docker run --rm \
 	  -v "$(abspath $(RAW_DIR)):/raw:ro" \
 	  -v "$(abspath services/geocoder/data):/data" \
-	  nullmap-geocoder python importer.py /raw/vietnam-latest.osm.pbf /data/geocoder.db
+	  nullmap-geocoder sh -c \
+	  "mkdir -p /build && python importer.py /raw/vietnam-latest.osm.pbf /build/geocoder.db && \
+	   cp /build/geocoder.db /data/geocoder.db"
 	docker compose up -d geocoder
 
 .PHONY: geo-test
