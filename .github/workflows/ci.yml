@@ -44,3 +44,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest
           PYTHONPATH=. pytest -q
+
+  shell:
+    name: shellcheck + bash -n (infra)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check
+        run: for f in infra/*.sh; do bash -n "$f"; done
+      - name: ShellCheck
+        run: shellcheck -e SC1091,SC2086 infra/*.sh
