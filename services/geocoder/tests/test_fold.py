@@ -2,6 +2,8 @@
 
 Run: cd services/geocoder && pip install pytest && PYTHONPATH=. pytest -q
 """
+import pytest
+
 from app.main import fold, fts_match
 
 
@@ -23,6 +25,7 @@ def test_fts_match_builds_prefix_query():
 
 
 def test_importer_and_service_fold_agree():
+    pytest.importorskip("osmium")  # importer.py imports osmium; only present in the geocoder image / CI
     # the index and the query path must fold identically or matches break
     from importer import fold as ifold
     for s in ("Nguyễn Huệ", "Đường Lê Lợi", "Quận 1"):
