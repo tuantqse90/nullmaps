@@ -27,6 +27,7 @@ import httpx
 from cachetools import TTLCache, LRUCache
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .polyline import reencode, encode, decode
 
@@ -61,6 +62,22 @@ app = FastAPI(
         "`GET /v1/snap?path=lat,lng|...`."
     ),
 )
+
+# Google clients branch on a `status` field. Render HTTPException on the customer
+# surface (/maps, /v1) as a Google-shaped body while preserving the HTTP status code.
+_GOOGLE_STATUS = {400: "INVALID_REQUEST", 403: "REQUEST_DENIED", 404: "NOT_FOUND",
+                  429: "OVER_QUERY_LIMIT", 502: "UNKNOWN_ERROR"}
+
+
+@app.exception_handler(StarletteHTTPException)
+async def google_shaped_error(request: Request, exc: StarletteHTTPException):
+    path = request.url.path
+    if path.startswith("/maps") or path.startswith("/v1"):
+        status = _GOOGLE_STATUS.get(exc.status_code, "UNKNOWN_ERROR")
+        return JSONResponse({"status": status, "error_message": exc.detail},
+                            status_code=exc.status_code)
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
 
 API_KEY = os.environ.get("API_KEY", "")
 VALHALLA_URL = os.environ.get("VALHALLA_URL", "http://valhalla:8002").rstrip("/")
