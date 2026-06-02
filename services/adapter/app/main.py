@@ -18,10 +18,12 @@ Pass it Google-style as ?key=... or as an X-API-Key header.
 from __future__ import annotations
 
 import os
+import time
+from collections import defaultdict
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .polyline import reencode, encode, decode
 
@@ -64,7 +66,43 @@ COSTING = {
     "walking": "pedestrian",
     "bicycling": "bicycle",
     "bicycle": "bicycle",
+    "truck": "truck",
+    "hgv": "truck",
+    "lorry": "truck",
 }
+
+
+def costing_options(request: Request, costing: str) -> dict:
+    """Per-costing options. For trucks, pass dimensions/limits so routing avoids
+    too-low/too-narrow/weight-restricted roads (logistics)."""
+    if costing != "truck":
+        return {}
+    q = request.query_params
+    truck = {}
+    for param, key in (("height", "height"), ("width", "width"), ("length", "length"),
+                       ("weight", "weight"), ("axle_load", "axle_load")):
+        v = q.get(param)
+        if v:
+            try:
+                truck[key] = float(v)
+            except ValueError:
+                pass
+    if (q.get("hazmat") or "").lower() in ("1", "true", "yes"):
+        truck["hazmat"] = True
+    return {"truck": truck} if truck else {}
+
+
+def avoid_locations(request: Request) -> list:
+    """Google-ish `avoid=lat,lng|lat,lng` -> Valhalla exclude_locations."""
+    out = []
+    for s in (request.query_params.get("avoid") or "").split("|"):
+        s = s.strip()
+        if "," in s:
+            try:
+                out.append(parse_latlng(s))
+            except HTTPException:
+                pass
+    return out
 
 
 def require_key(request: Request) -> None:
@@ -72,6 +110,48 @@ def require_key(request: Request) -> None:
     supplied = request.query_params.get("key") or request.headers.get("x-api-key")
     if not API_KEY or supplied != API_KEY:
         raise HTTPException(status_code=403, detail="invalid API key")
+
+
+# --- usage metrics + simple per-key rate limit (single uvicorn worker) -------
+RATE_PER_MIN = int(os.environ.get("RATE_LIMIT_PER_MIN", "600"))
+_counts: dict = defaultdict(int)          # (endpoint, status) -> total
+_by_key: dict = defaultdict(int)          # key -> total requests
+_rl: dict = defaultdict(lambda: [0, 0])   # key -> [minute_window, count]
+
+
+@app.middleware("http")
+async def metrics_and_ratelimit(request: Request, call_next):
+    path = request.url.path
+    metered = path.startswith("/maps") or path.startswith("/v1")
+    if metered:
+        key = request.query_params.get("key") or request.headers.get("x-api-key") or "anon"
+        minute = int(time.time() // 60)
+        st = _rl[key]
+        if st[0] != minute:
+            st[0], st[1] = minute, 0
+        st[1] += 1
+        _by_key[key] += 1
+        if st[1] > RATE_PER_MIN:
+            _counts[(path, 429)] += 1
+            return JSONResponse(
+                {"status": "OVER_QUERY_LIMIT", "error_message": f"rate limit {RATE_PER_MIN}/min"},
+                status_code=429)
+    resp = await call_next(request)
+    ep = (request.scope.get("route").path if request.scope.get("route") else path)
+    _counts[(ep, resp.status_code)] += 1
+    return resp
+
+
+@app.get("/metrics")
+def metrics():
+    """Prometheus text format — scrape from Grafana/Prometheus (gateway gates it)."""
+    out = ["# TYPE nullmaps_requests_total counter"]
+    for (ep, st), n in sorted(_counts.items()):
+        out.append(f'nullmaps_requests_total{{endpoint="{ep}",status="{st}"}} {n}')
+    out.append("# TYPE nullmaps_requests_by_key_total counter")
+    for k, n in sorted(_by_key.items()):
+        out.append(f'nullmaps_requests_by_key_total{{key="{k[:8]}"}} {n}')
+    return PlainTextResponse("\n".join(out) + "\n")
 
 
 def parse_latlng(s: str) -> dict:
@@ -162,43 +242,49 @@ async def directions(request: Request):
     locs = [parse_latlng(origin), *mids, parse_latlng(destination)]
 
     endpoint = "/optimized_route" if (optimize and len(mids) >= 1) else "/route"
-    data = await valhalla(endpoint, {
-        "locations": locs, "costing": costing_for(request), "units": "kilometers",
-    })
+    costing = costing_for(request)
+    payload = {"locations": locs, "costing": costing, "units": "kilometers"}
+    co = costing_options(request, costing)
+    if co:
+        payload["costing_options"] = co
+    excl = avoid_locations(request)
+    if excl:
+        payload["exclude_locations"] = excl
+    if (request.query_params.get("alternatives") or "").lower() in ("1", "true", "yes") and not optimize:
+        payload["alternates"] = 2
+    data = await valhalla(endpoint, payload)
     trip = data.get("trip")
     if not trip or trip.get("status") != 0:
         return JSONResponse({"status": "ZERO_RESULTS", "routes": [],
                              "error_message": data.get("error", "")}, status_code=200)
 
-    # Visiting order (optimized_route reorders; each location carries original_index)
-    visit = trip.get("locations", locs)
+    def build_route(t: dict) -> dict:
+        visit = t.get("locations", locs)
+        legs, coords = [], []
+        for i, leg in enumerate(t["legs"]):
+            summ = leg["summary"]
+            meters, secs = summ["length"] * 1000, summ["time"]
+            leg_coords = decode(leg["shape"], precision=6)
+            coords.extend(leg_coords)
+            a, b = visit[i], visit[i + 1]
+            legs.append({
+                "distance": {"text": dist_text(meters), "value": round(meters)},
+                "duration": {"text": dur_text(secs), "value": round(secs)},
+                "start_location": {"lat": a["lat"], "lng": a.get("lon", a.get("lng"))},
+                "end_location": {"lat": b["lat"], "lng": b.get("lon", b.get("lng"))},
+                "steps": build_steps(leg, leg_coords),
+            })
+        r = {"summary": "", "legs": legs, "overview_polyline": {"points": encode(coords, precision=5)}}
+        if optimize:
+            r["waypoint_order"] = [v["original_index"] - 1 for v in visit[1:-1]
+                                   if v.get("original_index", 0) not in (0, len(locs) - 1)]
+        return r
 
-    def pt(i):
-        v = visit[i]
-        return {"lat": v["lat"], "lng": v.get("lon", v.get("lng"))}
-
-    legs, coords = [], []
-    for i, leg in enumerate(trip["legs"]):
-        summ = leg["summary"]
-        meters, secs = summ["length"] * 1000, summ["time"]
-        leg_coords = decode(leg["shape"], precision=6)
-        coords.extend(leg_coords)
-        legs.append({
-            "distance": {"text": dist_text(meters), "value": round(meters)},
-            "duration": {"text": dur_text(secs), "value": round(secs)},
-            "start_location": pt(i),
-            "end_location": pt(i + 1),
-            "steps": build_steps(leg, leg_coords),
-        })
-
-    route = {"summary": "", "legs": legs,
-             "overview_polyline": {"points": encode(coords, precision=5)}}
-    if optimize:
-        # order of the intermediate waypoints by their original index (0-based)
-        order = [v["original_index"] - 1 for v in visit[1:-1]
-                 if v.get("original_index", 0) not in (0, len(locs) - 1)]
-        route["waypoint_order"] = order
-    return {"status": "OK", "routes": [route]}
+    routes = [build_route(trip)]
+    for alt in data.get("alternates", []):
+        if alt.get("trip"):
+            routes.append(build_route(alt["trip"]))
+    return {"status": "OK", "routes": routes}
 
 
 @app.get("/maps/api/distancematrix/json")

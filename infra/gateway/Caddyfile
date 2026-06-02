@@ -18,7 +18,7 @@
 
 	# API paths that lack a valid key -> 403 (header X-API-Key or ?key=)
 	@api_noauth {
-		path /maps/* /v1/*
+		path /maps/* /v1/* /metrics
 		not header X-API-Key {$API_KEY}
 		not query key={$API_KEY}
 	}
@@ -27,8 +27,8 @@
 		respond `{"status":"REQUEST_DENIED","error_message":"missing or invalid API key"}` 403
 	}
 
-	# Authorized API -> adapter
-	@api path /maps/* /v1/*
+	# Authorized API + metrics -> adapter
+	@api path /maps/* /v1/* /metrics
 	handle @api {
 		reverse_proxy adapter:8000
 	}
