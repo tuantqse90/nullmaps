@@ -43,6 +43,11 @@
           }
         ]
       }
+    },
+    "hillshade": {
+      "type": "raster",
+      "url": "/tiles/hillshade",
+      "tileSize": 256
     }
   },
   "layers": [
@@ -131,6 +136,16 @@
       "paint": {
         "fill-color": "#15281b",
         "fill-opacity": 0.55
+      }
+    },
+    {
+      "id": "hillshade",
+      "type": "raster",
+      "source": "hillshade",
+      "maxzoom": 14,
+      "paint": {
+        "raster-opacity": 0.3,
+        "raster-resampling": "linear"
       }
     },
     {

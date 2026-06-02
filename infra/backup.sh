@@ -13,6 +13,7 @@ F="--s3-no-check-bucket"
 
 echo "[backup] -> $DEST  ($(date -u +%FT%TZ))"
 rclone copy $F data/vietnam.pmtiles                          "$DEST/"
+[ -s data/hillshade.mbtiles ] && rclone copy $F data/hillshade.mbtiles "$DEST/"
 rclone copy $F services/geocoder/data/geocoder.db            "$DEST/"
 rclone copy $F services/routing/custom_files/valhalla_tiles.tar "$DEST/"
 rclone copy $F services/routing/custom_files/valhalla.json   "$DEST/"

@@ -12,6 +12,7 @@ F="--s3-no-check-bucket"
 mkdir -p data services/geocoder/data services/routing/custom_files/admin_data
 echo "[restore] <- $SRC"
 rclone copy $F "$SRC/vietnam.pmtiles"     data/
+rclone copy $F "$SRC/hillshade.mbtiles"   data/ 2>/dev/null || true
 rclone copy $F "$SRC/geocoder.db"         services/geocoder/data/
 rclone copy $F "$SRC/valhalla_tiles.tar"  services/routing/custom_files/
 rclone copy $F "$SRC/valhalla.json"       services/routing/custom_files/
