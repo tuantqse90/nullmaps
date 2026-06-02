@@ -97,8 +97,8 @@ services:
       start_period: 15s
 
   # --- Phase 4: Google/Goong-compat FastAPI adapter ------------------------
-  # Live: /maps/api/directions/json, /maps/api/distancematrix/json -> Valhalla.
-  # Pending Phase 3: geocode + place/autocomplete return 503 until Photon is up.
+  # Live: directions + distancematrix -> Valhalla; geocode/reverse/autocomplete/
+  # nearby/details -> geocoder; /v1/isochrone + /v1/snap native. All engines up.
   adapter:
     build: ./services/adapter
     expose:

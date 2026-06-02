@@ -19,6 +19,9 @@ make demo                     # build VN PMTiles (if needed) + serve
 
 `make help` lists all commands. Full steps: [`docs/runbook-phase1-tiles.md`](docs/runbook-phase1-tiles.md).
 
+**Terrain overlays:** hillshade + 100 m contour lines (from the Copernicus GLO-90 DEM) build via
+`infra/build-hillshade.sh` / `infra/build-contour.sh` and serve through Martin alongside the basemap.
+
 ## Routing (Phase 2 — motorbike-first)
 
 ```bash
@@ -33,7 +36,7 @@ Details + gotchas: [`docs/runbook-phase2-routing.md`](docs/runbook-phase2-routin
 
 ```bash
 docker compose up -d adapter      # :8010
-make adapter-test                 # Directions + Matrix (live), geocode 503 (pending Phase 3)
+make adapter-test                 # Directions + Matrix + Geocode/Autocomplete (all live)
 ```
 
 Drop-in Google shapes (auth via `?key=` or `X-API-Key`), motorbike-first by default:
@@ -63,7 +66,7 @@ fail-open. `make norm-test`; details in [`services/normalizer/README.md`](servic
 | 1 | Tiles + MapLibre SDK | Planetiler → PMTiles → Martin | **done** |
 | 2 | Directions + Matrix (motorbike-first) | Valhalla | **done** |
 | 3 | Geocoding / Reverse / Autocomplete | lightweight (pyosmium+SQLite); Photon for prod | **done** |
-| 4 | Google/Goong-compat API (**required**) | FastAPI adapter | **done** (all 4 endpoints live) |
+| 4 | Google/Goong-compat API (**required**) | FastAPI adapter | **done** (directions, matrix, geocode/reverse, autocomplete, nearby, details + isochrone/snap) |
 | 5 | AI address helper (optional) | LiteLLM → Qwen | **done** (ships no-op; enable with a key) |
 
 ## Production entrypoint & deploy
@@ -108,7 +111,7 @@ full-planet OSM** without an explicit decision. Tile/graph artifacts are gitigno
 |---|---|---|---|
 | Phase 1 (tiles) | 2–4 GB | ~5 GB | Planetiler build is the peak |
 | + Phase 2 Valhalla | +several GB | + graph tiles | RAM-heavy graph build |
-| + Phase 3 Photon/ES | +several GB | + ES index | hungriest component |
+| + Phase 3 geocoder (SQLite) | ~256 MB | ~56 MB index | lightweight; Photon = heavier prod swap-in |
 
 Re-measure and update this table as each service lands. Vietnam-only scope keeps a single box viable.
 

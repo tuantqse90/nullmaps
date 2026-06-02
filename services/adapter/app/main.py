@@ -4,13 +4,14 @@ Maps Google Maps API request/response shapes onto the native NullMaps engines so
 existing apps can repoint without rewriting client code. Goong's REST shapes mirror
 Google's closely, so this Google-compatible surface covers most of Goong too.
 
-Live now (Valhalla is up):
-  GET /maps/api/directions/json        -> Valhalla /route
+Live endpoints (all engines up):
+  GET /maps/api/directions/json        -> Valhalla /route (or /optimized_route)
   GET /maps/api/distancematrix/json    -> Valhalla /sources_to_targets
-
-Pending Phase 3 (Photon) — return a clear 503 until geocoding is online:
-  GET /maps/api/geocode/json
-  GET /maps/api/place/autocomplete/json
+  GET /maps/api/geocode/json           -> geocoder /geocode | /reverse
+  GET /maps/api/place/autocomplete/json-> geocoder /autocomplete
+  GET /maps/api/place/nearbysearch/json-> geocoder /nearby
+  GET /maps/api/place/details/json     -> geocoder /detail
+  GET /v1/isochrone, GET /v1/snap      -> Valhalla /isochrone, /trace_route (native)
 
 Auth: single shared API_KEY, checked on every endpoint except /healthz.
 Pass it Google-style as ?key=... or as an X-API-Key header.

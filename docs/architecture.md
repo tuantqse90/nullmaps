@@ -12,9 +12,9 @@ API key. See `CLAUDE.md` for the full framing and decision log.
                        └───────┬─────────┬───────┬────┘
                                │         │       │
                   ┌────────────▼──┐  ┌───▼────┐  ▼ tiles
-                  │ Valhalla (P2) │  │ Photon │  Martin (P1)
+                  │ Valhalla (P2) │  │geocoder│  Martin (P1)
                   │ route/matrix  │  │ (P3)   │  ┌────────────┐
-                  │ motorbike     │  │ geocode│  │ vietnam.   │
+                  │ motorbike     │  │ SQLite │  │ vietnam.   │
                   └───────┬───────┘  └───┬────┘  │ pmtiles    │
                           │              │       └─────▲──────┘
                           └──── built from ────────────┘
@@ -37,8 +37,11 @@ All three native engines derive from the **same Geofabrik Vietnam extract**.
 | Render/SDK| MapLibre GL JS, `react-map-gl`  | Open, no vendor SDK |
 | Tiles     | Planetiler → PMTiles → Martin   | Fast VN build, single-file archive |
 | Routing   | Valhalla                        | First-class motorbike costing |
-| Geocoding | Photon                          | Typeahead + diacritic folding |
+| Geocoding | lightweight SQLite (FTS5/R*Tree) | Typeahead + diacritic folding; Photon = prod swap-in |
 | Adapter   | FastAPI (Python 3.12)           | Repoint apps without client rewrites |
+| Gateway   | Caddy (`:8088`, key-gated front door) | Single entrypoint; engines have no public ports |
+| AI helper | LiteLLM → Qwen (optional, Phase 5) | Vietnamese address normalization, opt-in `?normalize=1` |
+| Terrain   | Copernicus GLO-90 DEM → GDAL/tippecanoe | Hillshade + contour overlays via Martin |
 | Store     | PostgreSQL + PostGIS            | Spatial store |
 | Deploy    | Docker Compose on Hetzner/Coolify | One box, compose = source of truth |
 
