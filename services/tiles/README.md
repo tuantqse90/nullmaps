@@ -31,14 +31,26 @@ make demo                     # start Martin + demo, prints the URL
 
 ## Files
 
-- `style/index.html` — MapLibre demo page (centered on HCMC, registers the PMTiles protocol).
-- `Caddyfile` — static server config for the demo page.
-- Planetiler runs via Docker from the root `Makefile` (no config file needed for the default profile).
+- `style/style.json` — full MapLibre style (OMT layers: water, landcover/landuse, parks, buildings,
+  roads with casing, labels, admin boundaries) + a **sovereignty** GeoJSON layer.
+- `style/index.html` — demo page (HCMC) that loads `/style.json`.
+- `Caddyfile` — serves the demo + reverse-proxies Martin under `/tiles`.
+- `fonts/` — self-hosted glyph fonts (`make fonts` downloads Noto Sans); Martin serves them at
+  `/tiles/font/{fontstack}/{range}`. Gitignored.
+
+## Self-hosted glyphs
+
+Glyphs are served by **Martin** (`--font /fonts`), not a public CDN — keeps the Privacy pillar intact.
+The style's `glyphs` points at `/tiles/font/{fontstack}/{range}`; font stacks are `Noto Sans Regular`
+and `Noto Sans Bold`. Run `make fonts` before `make up`/`make demo` (they depend on it).
+
+## Sovereignty
+
+The style **always labels Hoàng Sa (Paracel) and Trường Sa (Spratly) as "(Việt Nam)"** via a dedicated
+GeoJSON layer — correct for any user-facing app (the brief's sovereignty note).
 
 ## Notes
 
-- MapLibre **requires `addProtocol("pmtiles", …)`** before using a `pmtiles://` source or it fails
-  silently. The demo does this even when serving via Martin.
-- Style editing: load the style into **Maputnik** to author visually.
-- **Sovereignty:** if a consuming app is user-facing, ensure **Hoàng Sa / Trường Sa** are labelled
-  correctly in the style.
+- Style editing: load `style/style.json` into **Maputnik** to author visually.
+- The demo still registers the PMTiles protocol so a `pmtiles://` source also works if you serve the
+  raw `.pmtiles` file directly instead of via Martin.

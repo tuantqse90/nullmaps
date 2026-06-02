@@ -6,7 +6,6 @@
   <title>NullMaps — Vietnam basemap demo (HCMC)</title>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <!-- PMTiles protocol — MapLibre fails silently without addProtocol when using pmtiles:// -->
   <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
   <style>
     html, body, #map { margin: 0; height: 100%; width: 100%; }
@@ -21,48 +20,17 @@
   <div id="map"></div>
   <div id="badge">NullMaps · self-hosted VN basemap · Ho Chi Minh City</div>
   <script>
-    // Register the PMTiles protocol so a pmtiles:// source works (used by the
-    // commented direct-file source below). Harmless when serving via Martin.
-    const protocol = new pmtiles.Protocol();
-    maplibregl.addProtocol("pmtiles", protocol.tile);
+    // PMTiles protocol (harmless when tiles come via Martin) — registered so a
+    // pmtiles:// source also works if you serve the .pmtiles file directly.
+    maplibregl.addProtocol("pmtiles", new pmtiles.Protocol().tile);
 
-    // Primary Phase-1 path: tiles via Martin, reverse-proxied by Caddy under
-    // /tiles on THIS origin (no CORS). Martin names the source after the file:
-    // vietnam.pmtiles -> /tiles/vietnam
-    const MARTIN_TILEJSON = "/tiles/vietnam";
-
+    // Full style (OMT layers + Hoàng Sa / Trường Sa labels), tiles + glyphs
+    // both served by Martin behind Caddy /tiles — single origin, self-hosted.
     const map = new maplibregl.Map({
       container: "map",
       center: [106.700, 10.776],   // Ho Chi Minh City (lon, lat)
       zoom: 11,
-      style: {
-        version: 8,
-        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-        sources: {
-          // Via Martin TileJSON (default). To serve the raw .pmtiles directly
-          // instead, swap for: { type: "vector", url: "pmtiles://http://localhost:8080/vietnam.pmtiles" } (and serve the file)
-          vn: { type: "vector", url: MARTIN_TILEJSON }
-        },
-        layers: [
-          { id: "bg", type: "background", paint: { "background-color": "#eef1f0" } },
-          { id: "water", type: "fill", source: "vn", "source-layer": "water",
-            paint: { "fill-color": "#a9d3e0" } },
-          { id: "landcover", type: "fill", source: "vn", "source-layer": "landcover",
-            paint: { "fill-color": "#d6e8cf", "fill-opacity": 0.6 } },
-          { id: "landuse", type: "fill", source: "vn", "source-layer": "landuse",
-            paint: { "fill-color": "#e3e8df", "fill-opacity": 0.6 } },
-          { id: "buildings", type: "fill", source: "vn", "source-layer": "building",
-            minzoom: 13, paint: { "fill-color": "#d9d2c5" } },
-          { id: "roads", type: "line", source: "vn", "source-layer": "transportation",
-            paint: { "line-color": "#ffffff", "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 16, 4] } },
-          { id: "road-labels", type: "symbol", source: "vn", "source-layer": "transportation_name",
-            layout: { "text-field": ["get", "name"], "text-size": 11, "symbol-placement": "line" },
-            paint: { "text-color": "#444", "text-halo-color": "#fff", "text-halo-width": 1 } },
-          { id: "places", type: "symbol", source: "vn", "source-layer": "place",
-            layout: { "text-field": ["get", "name"], "text-size": 13 },
-            paint: { "text-color": "#163300", "text-halo-color": "#fff", "text-halo-width": 1.5 } }
-        ]
-      }
+      style: "/style.json"
     });
     map.addControl(new maplibregl.NavigationControl());
   </script>

@@ -15,6 +15,9 @@ services/routing/custom_files/
 services/geocoder/data/
 *.db
 
+# Self-hosted glyph fonts (downloaded via `make fonts`)
+services/tiles/fonts/
+
 # Tooling state
 .claude/
 

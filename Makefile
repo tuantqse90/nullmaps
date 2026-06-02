@@ -62,12 +62,23 @@ tiles: $(PBF) sources ## Build Vietnam PMTiles from the extract via Planetiler
 	  --force
 	@echo ">> Done. Tiles at $(DATA_DIR)/$(PMTILES_FILE)"
 
+FONT_BASE := https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans
+
+.PHONY: fonts
+fonts: ## Fetch self-hosted glyph fonts (Noto Sans) for Martin to serve
+	@mkdir -p services/tiles/fonts
+	@test -s "services/tiles/fonts/NotoSans-Regular.ttf" || \
+	  curl -fSL "$(FONT_BASE)/NotoSans-Regular.ttf" -o services/tiles/fonts/NotoSans-Regular.ttf
+	@test -s "services/tiles/fonts/NotoSans-Bold.ttf" || \
+	  curl -fSL "$(FONT_BASE)/NotoSans-Bold.ttf" -o services/tiles/fonts/NotoSans-Bold.ttf
+	@echo ">> fonts ready in services/tiles/fonts/"
+
 .PHONY: up
-up: ## Start Phase 1 services (martin + demo) in the background
+up: fonts ## Start Phase 1 services (martin + demo) in the background
 	docker compose up -d martin demo
 
 .PHONY: demo
-demo: ## Build tiles if missing, start services, print the demo URL
+demo: fonts ## Build tiles if missing, start services, print the demo URL
 	@test -f "$(DATA_DIR)/$(PMTILES_FILE)" || $(MAKE) tiles
 	docker compose up -d martin demo
 	@echo ">> Demo:   http://localhost:$(DEMO_PORT)   (Ho Chi Minh City basemap)"
