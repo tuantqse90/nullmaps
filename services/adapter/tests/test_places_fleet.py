@@ -50,3 +50,100 @@ def test_metrics_keeps_default_error_shape():
     r = c.get("/metrics")  # not under /maps or /v1 -> default {detail}
     assert r.status_code == 403
     assert "detail" in r.json()
+
+
+# --- canned engine responses ---------------------------------------------------
+async def fake_reverse(path, params):
+    return {"result": {"osm_id": "n9", "name": "Chợ Bến Thành", "kind": "poi",
+                       "lat": 10.7725, "lon": 106.6980, "district": "Quận 1", "city": "HCMC"}}
+
+
+async def fake_results(path, params):
+    return {"results": [{"osm_id": "n1", "name": "Bến Thành", "kind": "poi",
+                        "lat": 10.7704, "lon": 106.6951, "extra": "HCMC",
+                        "category": "marketplace", "distance_m": 120}]}
+
+
+async def fake_detail(path, params):
+    return {"result": {"osm_id": "n1", "name": "Bến Thành", "kind": "poi",
+                       "lat": 10.7704, "lon": 106.6951}}
+
+
+async def fake_isochrone(path, payload):
+    return {"type": "FeatureCollection", "features": [{"type": "Feature"}]}
+
+
+async def fake_trace(path, payload):
+    from app.polyline import encode
+    shape6 = encode([(10.77, 106.69), (10.79, 106.72)], precision=6)
+    return {"trip": {"status": 0, "summary": {"length": 3.1, "time": 240},
+                    "legs": [{"shape": shape6}]}}
+
+
+def test_reverse_geocode_shape(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "geocoder", fake_reverse)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/geocode/json", params={"latlng": "10.7725,106.6980", "key": "secret"})
+    assert r.status_code == 200
+    g = r.json()["results"][0]
+    assert g["geometry"]["location"] == {"lat": 10.7725, "lng": 106.6980}
+
+
+def test_autocomplete_shape(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "geocoder", fake_results)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/place/autocomplete/json", params={"input": "ben thanh", "key": "secret"})
+    b = r.json()
+    assert b["status"] == "OK"
+    assert b["predictions"][0]["structured_formatting"]["main_text"] == "Bến Thành"
+
+
+def test_nearbysearch_shape(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "geocoder", fake_results)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/place/nearbysearch/json",
+              params={"location": "10.77,106.69", "radius": "500", "key": "secret"})
+    b = r.json()
+    assert b["status"] == "OK"
+    assert b["results"][0]["distance_m"] == 120
+
+
+def test_place_details_shape(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "geocoder", fake_detail)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/place/details/json", params={"place_id": "n1", "key": "secret"})
+    assert r.json()["result"]["name"] == "Bến Thành"
+
+
+def test_isochrone_passthrough(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "valhalla", fake_isochrone)
+    c = TestClient(m.app)
+    r = c.get("/v1/isochrone", params={"location": "10.77,106.69", "contours": "10", "key": "secret"})
+    assert r.json()["type"] == "FeatureCollection"
+
+
+def test_snap_shape(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "valhalla", fake_trace)
+    c = TestClient(m.app)
+    r = c.get("/v1/snap", params={"path": "10.77,106.69|10.79,106.72", "key": "secret"})
+    b = r.json()
+    assert b["status"] == "OK"
+    assert b["distance"]["value"] == 3100
+    assert b["snapped_polyline"]["points"]
+
+
+def test_rate_limit_429(monkeypatch):
+    m = load(rate_per_min=1)
+    monkeypatch.setattr(m, "geocoder", fake_results)
+    c = TestClient(m.app)
+    first = c.get("/maps/api/geocode/json", params={"address": "a", "key": "secret"})
+    second = c.get("/maps/api/geocode/json", params={"address": "b", "key": "secret"})
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.json()["status"] == "OVER_QUERY_LIMIT"
