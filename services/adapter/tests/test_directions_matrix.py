@@ -181,3 +181,10 @@ def test_geocode_caches_repeated_query(monkeypatch):
 
     c.get("/maps/api/geocode/json", params={"address": "cho lon", "key": "secret"})
     assert calls["n"] == 2  # different query -> a fresh fetch
+
+
+def test_metrics_requires_key():
+    m = load()
+    c = TestClient(m.app)
+    assert c.get("/metrics").status_code == 403
+    assert c.get("/metrics", params={"key": "secret"}).status_code == 200

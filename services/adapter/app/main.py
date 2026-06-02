@@ -158,8 +158,10 @@ async def metrics_and_ratelimit(request: Request, call_next):
 
 
 @app.get("/metrics")
-def metrics():
-    """Prometheus text format — scrape from Grafana/Prometheus (gateway gates it)."""
+def metrics(request: Request):
+    """Prometheus text format — scrape from Grafana/Prometheus. Key-gated (pass
+    ?key= or X-API-Key) in addition to the gateway, so it can't leak if bypassed."""
+    require_key(request)
     out = ["# TYPE nullmaps_requests_total counter"]
     for (ep, st), n in sorted(_counts.items()):
         out.append(f'nullmaps_requests_total{{endpoint="{ep}",status="{st}"}} {n}')
