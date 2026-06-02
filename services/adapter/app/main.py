@@ -168,6 +168,16 @@ def costing_for(request: Request) -> str:
     return COSTING.get((mode or "").lower(), "motor_scooter")
 
 
+# Google `language` / Goong -> Valhalla (Odin) locale. Default vi-VN for a VN-only
+# product; unknown codes pass through and Odin falls back to en-US.
+LANG = {"vi": "vi-VN", "vi-vn": "vi-VN", "en": "en-US", "en-us": "en-US"}
+
+
+def language_for(request: Request) -> str:
+    raw = request.query_params.get("language") or ""
+    return LANG.get(raw.lower(), raw or "vi-VN")
+
+
 def dist_text(meters: float) -> str:
     return f"{meters/1000:.1f} km" if meters >= 1000 else f"{round(meters)} m"
 
@@ -243,7 +253,8 @@ async def directions(request: Request):
 
     endpoint = "/optimized_route" if (optimize and len(mids) >= 1) else "/route"
     costing = costing_for(request)
-    payload = {"locations": locs, "costing": costing, "units": "kilometers"}
+    payload = {"locations": locs, "costing": costing, "units": "kilometers",
+               "directions_options": {"language": language_for(request)}}
     co = costing_options(request, costing)
     if co:
         payload["costing_options"] = co

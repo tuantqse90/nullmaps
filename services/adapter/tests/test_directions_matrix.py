@@ -130,3 +130,34 @@ def test_polyline_roundtrip():
     out = decode(encode(pts, precision=5), precision=5)
     for (a, b), (c, d) in zip(pts, out):
         assert abs(a - c) < 1e-4 and abs(b - d) < 1e-4
+
+
+def test_directions_default_language_is_vietnamese(monkeypatch):
+    m = load()
+    seen = {}
+
+    async def capture(path, payload):
+        seen.update(payload)
+        return await fake_route(path, payload)
+
+    monkeypatch.setattr(m, "valhalla", capture)
+    c = TestClient(m.app)
+    c.get("/maps/api/directions/json",
+          params={"origin": "10.77,106.69", "destination": "10.79,106.72", "key": "secret"})
+    assert seen["directions_options"]["language"] == "vi-VN"
+
+
+def test_directions_language_override_en(monkeypatch):
+    m = load()
+    seen = {}
+
+    async def capture(path, payload):
+        seen.update(payload)
+        return await fake_route(path, payload)
+
+    monkeypatch.setattr(m, "valhalla", capture)
+    c = TestClient(m.app)
+    c.get("/maps/api/directions/json",
+          params={"origin": "10.77,106.69", "destination": "10.79,106.72",
+                  "language": "en", "key": "secret"})
+    assert seen["directions_options"]["language"] == "en-US"
