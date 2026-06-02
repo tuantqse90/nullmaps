@@ -161,3 +161,23 @@ def test_directions_language_override_en(monkeypatch):
           params={"origin": "10.77,106.69", "destination": "10.79,106.72",
                   "language": "en", "key": "secret"})
     assert seen["directions_options"]["language"] == "en-US"
+
+
+def test_geocode_caches_repeated_query(monkeypatch):
+    m = load()
+    calls = {"n": 0}
+
+    async def fake_fetch(path, params):
+        calls["n"] += 1
+        return {"results": [{"osm_id": "n1", "name": "Bến Thành", "kind": "poi",
+                             "lat": 10.7704, "lon": 106.6951}]}
+
+    monkeypatch.setattr(m, "_geocoder_fetch", fake_fetch)
+    c = TestClient(m.app)
+    p = {"address": "ben thanh", "key": "secret"}
+    c.get("/maps/api/geocode/json", params=p)
+    c.get("/maps/api/geocode/json", params=p)
+    assert calls["n"] == 1  # second request served from cache
+
+    c.get("/maps/api/geocode/json", params={"address": "cho lon", "key": "secret"})
+    assert calls["n"] == 2  # different query -> a fresh fetch

@@ -20,14 +20,29 @@ from __future__ import annotations
 import os
 import time
 from collections import defaultdict
+from contextlib import asynccontextmanager
 
 import httpx
+from cachetools import TTLCache
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .polyline import reencode, encode, decode
 
+_geo_cache: TTLCache = TTLCache(maxsize=2048, ttl=120)  # geocoder read cache (2 min)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.http = httpx.AsyncClient()
+    try:
+        yield
+    finally:
+        await app.state.http.aclose()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="NullMaps API",
     version="1.0.0",
     description=(
@@ -190,32 +205,41 @@ def dur_text(seconds: float) -> str:
 
 
 async def valhalla(path: str, payload: dict) -> dict:
-    async with httpx.AsyncClient(timeout=20) as client:
-        try:
-            r = await client.post(f"{VALHALLA_URL}{path}", json=payload)
-        except httpx.HTTPError as e:
-            raise HTTPException(status_code=502, detail=f"routing engine unreachable: {e}")
+    try:
+        r = await app.state.http.post(f"{VALHALLA_URL}{path}", json=payload, timeout=20)
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"routing engine unreachable: {e}")
+    return r.json() if r.content else {}
+
+
+async def _geocoder_fetch(path: str, params: dict) -> dict:
+    try:
+        r = await app.state.http.get(f"{GEOCODER_URL}{path}", params=params, timeout=10)
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"geocoder unreachable: {e}")
     return r.json() if r.content else {}
 
 
 async def geocoder(path: str, params: dict) -> dict:
-    async with httpx.AsyncClient(timeout=10) as client:
-        try:
-            r = await client.get(f"{GEOCODER_URL}{path}", params=params)
-        except httpx.HTTPError as e:
-            raise HTTPException(status_code=502, detail=f"geocoder unreachable: {e}")
-    return r.json() if r.content else {}
+    """Cached geocoder read. Typeahead/reverse repeat heavily; cache the engine
+    response for `ttl` seconds. Errors raise from _geocoder_fetch and are not cached."""
+    key = (path, frozenset(params.items()))
+    if key in _geo_cache:
+        return _geo_cache[key]
+    result = await _geocoder_fetch(path, params)
+    _geo_cache[key] = result
+    return result
 
 
-async def maybe_normalize(request: Request, text: str) -> str:
-    """Optional Phase-5 AI cleanup, opt-in via ?normalize=1. Fail-open: any
-    error or unconfigured normalizer returns the input unchanged."""
+async def maybe_normalize(request: Request, text: str, timeout: float = 8) -> str:
+    """Optional Phase-5 AI cleanup, opt-in via ?normalize=1. Fail-open: any error,
+    timeout, or unconfigured normalizer returns the input unchanged."""
     flag = (request.query_params.get("normalize") or "").lower()
     if not NORMALIZER_URL or flag not in ("1", "true", "yes"):
         return text
     try:
-        async with httpx.AsyncClient(timeout=12) as client:
-            r = await client.get(f"{NORMALIZER_URL}/normalize", params={"q": text})
+        r = await app.state.http.get(f"{NORMALIZER_URL}/normalize",
+                                     params={"q": text}, timeout=timeout)
         return (r.json().get("normalized") or text) if r.content else text
     except httpx.HTTPError:
         return text
