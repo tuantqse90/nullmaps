@@ -33,9 +33,13 @@
 		reverse_proxy adapter:8000
 	}
 
-	# Tiles + glyphs (read-only basemap)
+	# Tiles + glyphs (read-only basemap). Force X-Forwarded-Proto so Martin emits
+	# https TileJSON URLs behind TLS (otherwise the map blanks on mixed-content).
 	handle /tiles/* {
-		reverse_proxy martin:3000
+		reverse_proxy martin:3000 {
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-Host {host}
+		}
 	}
 
 	# Demo page + style.json (read-only)
