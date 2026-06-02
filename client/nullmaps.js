@@ -5,6 +5,19 @@
 //   const route = await nm.directions("10.7725,106.6980", "10.7951,106.7218");
 //   nm.map(maplibregl, "map");                       // embed the self-hosted basemap
 
+let _pmtilesRegistered = false;
+
+// Register the MapLibre `pmtiles://` protocol once. No-op if already registered or
+// if the pmtiles lib isn't available. Pass the pmtiles module explicitly, or rely on
+// a global `pmtiles` (UMD build). CLAUDE.md: MapLibre fails silently without this.
+function registerPmtilesProtocol(maplibregl, pmtiles) {
+  if (_pmtilesRegistered) return;
+  const lib = pmtiles || (typeof globalThis !== "undefined" ? globalThis.pmtiles : undefined);
+  if (!lib || !maplibregl || typeof maplibregl.addProtocol !== "function") return;
+  maplibregl.addProtocol("pmtiles", new lib.Protocol().tile);
+  _pmtilesRegistered = true;
+}
+
 export class NullMaps {
   constructor({ baseUrl = "https://maps.nullshift.sh", key } = {}) {
     if (!key) throw new Error("NullMaps: `key` is required");
@@ -56,7 +69,8 @@ export class NullMaps {
   // MapLibre helper — pass the imported maplibregl module + a container id/element.
   // opts.theme "dark" uses the dark style; opts.controls adds nav/scale/geolocate/fullscreen.
   map(maplibregl, container, opts = {}) {
-    const { theme = "light", controls = true, ...mapOpts } = opts;
+    const { theme = "light", controls = true, pmtiles, ...mapOpts } = opts;
+    registerPmtilesProtocol(maplibregl, pmtiles);
     const m = new maplibregl.Map({
       container,
       style: `${this.base}/${theme === "dark" ? "style-dark.json" : "style.json"}`,
@@ -132,7 +146,8 @@ export class NullMaps {
   // PNG data URL. opts: { center:[lng,lat], zoom, size:[w,h], theme, markers:[{lng,lat,color}], route }
   staticImage(maplibregl, opts = {}) {
     const { center = [106.700, 10.776], zoom = 12, size = [600, 400], theme = "light",
-      markers = [], route = null, pitch = 0, bearing = 0 } = opts;
+      markers = [], route = null, pitch = 0, bearing = 0, pmtiles } = opts;
+    registerPmtilesProtocol(maplibregl, pmtiles);
     return new Promise((resolve, reject) => {
       const el = document.createElement("div");
       el.style.cssText = `position:absolute;left:-9999px;top:0;width:${size[0]}px;height:${size[1]}px;`;
@@ -173,4 +188,6 @@ export class NullMaps {
   }
 }
 
+NullMaps.registerPmtilesProtocol = registerPmtilesProtocol;
+export { registerPmtilesProtocol };
 export default NullMaps;
