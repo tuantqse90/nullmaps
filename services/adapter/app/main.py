@@ -473,7 +473,7 @@ async def geocode(request: Request):
         address = request.query_params.get("address")
         if not address:
             return JSONResponse({"status": "INVALID_REQUEST", "results": []}, status_code=400)
-        address = await maybe_normalize(request, address)
+        address = await maybe_normalize(request, address, timeout=8)
         params = {"q": address, "limit": 5}
         params.update(_bias_params(request))
         data = await geocoder("/geocode", params)
@@ -538,7 +538,7 @@ async def autocomplete(request: Request):
     text = request.query_params.get("input")
     if not text:
         return JSONResponse({"status": "INVALID_REQUEST", "predictions": []}, status_code=400)
-    text = await maybe_normalize(request, text)
+    text = await maybe_normalize(request, text, timeout=2)  # typeahead must not hang on the LLM
     params = {"q": text, "limit": 8}
     params.update(_bias_params(request))
     data = await geocoder("/autocomplete", params)
