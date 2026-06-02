@@ -5,10 +5,10 @@
 #  - logs a line if the public URL is not 200
 # Optional alerting: set NULLMAPS_ALERT_WEBHOOK to POST failures to Slack/Discord.
 set -uo pipefail
+cd "$(dirname "$0")/.." || exit 1
 LOG=/var/log/nullmaps-monitor.log
-WEBHOOK="${NULLMAPS_ALERT_WEBHOOK:-}"
-ts() { date -u +%FT%TZ; }
-alert() { echo "$(ts) $1" >> "$LOG"; [ -n "$WEBHOOK" ] && curl -s -m 10 -X POST -H 'Content-Type: application/json' -d "{\"text\":\"NullMaps: $1\"}" "$WEBHOOK" >/dev/null 2>&1 || true; }
+# shellcheck source=infra/lib.sh
+. "$(dirname "$0")/lib.sh"
 
 # 1) self-heal unhealthy containers
 for c in $(docker ps --filter name=nullmaps --filter health=unhealthy -q); do

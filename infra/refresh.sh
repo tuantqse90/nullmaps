@@ -6,11 +6,12 @@
 #
 # Usage (on the VPS):  bash /opt/nullmaps/infra/refresh.sh
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 ROOT="$(pwd)"
 LOG=/var/log/nullmaps-refresh.log
 exec 9>/tmp/nullmaps-refresh.lock; flock -n 9 || { echo "refresh already running"; exit 0; }
-log(){ echo "$(date -u +%FT%TZ) $1" | tee -a "$LOG"; }
+# shellcheck source=infra/lib.sh
+. "$(dirname "$0")/lib.sh"
 N="nice -n 15 ionice -c3"
 set -a; [ -f .env ] && . ./.env; set +a
 URL="${OSM_EXTRACT_URL:-https://download.geofabrik.de/asia/vietnam-latest.osm.pbf}"
