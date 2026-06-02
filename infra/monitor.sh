@@ -4,9 +4,10 @@
 #  - alerts if the public URL is not 200
 # Optional alerting: set NULLMAPS_ALERT_WEBHOOK to POST failures to Slack/Discord.
 set -uo pipefail
-cd "$(dirname "$0")/.." || exit 1
+# shellcheck disable=SC2164
+cd "$(dirname "$0")/.."
+# shellcheck disable=SC2034
 LOG=/var/log/nullmaps-monitor.log
-export LOG
 set -a; [ -f .env ] && . ./.env; set +a
 # shellcheck source=infra/lib.sh
 . "$(dirname "$0")/lib.sh"
