@@ -85,17 +85,31 @@ class Handler(osmium.SimpleHandler):
         kind = classify(tags)
         if kind is None:
             return
-        extra = tags.get("addr:city") or tags.get("addr:district") or ""
+        # category = the meaningful OSM class (restaurant/fuel/...) for nearby search
+        cat = ""
+        for k in POI_KEYS:
+            if k in tags:
+                cat = tags[k]
+                break
+        if not cat:
+            cat = tags.get("place") or tags.get("highway") or ""
+        housenumber = tags.get("addr:housenumber", "")
+        street = tags.get("addr:street", "")
+        city = tags.get("addr:city", "")
+        district = tags.get("addr:district") or tags.get("addr:subdistrict", "")
+        region = tags.get("addr:province") or tags.get("addr:state", "")
+        extra = city or district or ""
         self.batch.append((osm_id, name, fold(name), kind, lat, lon, extra,
-                           importance(tags, kind)))
+                           importance(tags, kind), cat, housenumber, street, city, district, region))
         self.count += 1
         if len(self.batch) >= 5000:
             self._flush()
 
     def _flush(self):
         self.db.executemany(
-            "INSERT INTO features(osm_id,name,folded,kind,lat,lon,extra,importance) "
-            "VALUES (?,?,?,?,?,?,?,?)", self.batch)
+            "INSERT INTO features(osm_id,name,folded,kind,lat,lon,extra,importance,"
+            "category,housenumber,street,city,district,region) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", self.batch)
         self.batch.clear()
 
     def node(self, n):
@@ -124,7 +138,8 @@ def build(pbf: str, out: str) -> int:
         DROP TABLE IF EXISTS features;
         CREATE TABLE features(
           id INTEGER PRIMARY KEY, osm_id TEXT, name TEXT, folded TEXT,
-          kind TEXT, lat REAL, lon REAL, extra TEXT, importance INTEGER DEFAULT 0);
+          kind TEXT, lat REAL, lon REAL, extra TEXT, importance INTEGER DEFAULT 0,
+          category TEXT, housenumber TEXT, street TEXT, city TEXT, district TEXT, region TEXT);
     """)
     h = Handler(db)
     h.apply_file(pbf, locations=True, idx="flex_mem")
@@ -134,6 +149,8 @@ def build(pbf: str, out: str) -> int:
     # Rank: places first, then streets, then POIs/addresses (for result ordering)
     db.executescript("""
         CREATE INDEX idx_folded ON features(folded);
+        CREATE INDEX idx_category ON features(category);
+        CREATE INDEX idx_osmid ON features(osm_id);
         CREATE VIRTUAL TABLE features_fts USING fts5(
           folded, content='features', content_rowid='id', tokenize='unicode61');
         INSERT INTO features_fts(rowid, folded) SELECT id, folded FROM features;

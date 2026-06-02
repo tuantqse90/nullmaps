@@ -385,6 +385,43 @@ def _feature_types(kind: str) -> list[str]:
             "address": ["street_address"]}.get(kind, ["establishment"])
 
 
+def _address_components(r: dict) -> list:
+    comps = []
+
+    def add(val, types):
+        if val:
+            comps.append({"long_name": val, "short_name": val, "types": types})
+
+    add(r.get("housenumber"), ["street_number"])
+    add(r.get("street"), ["route"])
+    add(r.get("district"), ["administrative_area_level_2", "political"])
+    add(r.get("city"), ["administrative_area_level_1", "locality", "political"])
+    add(r.get("region"), ["administrative_area_level_1", "political"])
+    add("Vietnam", ["country", "political"])
+    return comps
+
+
+def _formatted(r: dict) -> str:
+    line1 = " ".join(filter(None, [r.get("housenumber"), r.get("street")]))
+    seen = []
+    for p in [r.get("name"), line1 or None, r.get("district"), r.get("city"), r.get("region")]:
+        if p and p not in seen:
+            seen.append(p)
+    return ", ".join(seen) or (r.get("name") or "")
+
+
+def _geo_result(r: dict) -> dict:
+    return {
+        "formatted_address": _formatted(r),
+        "geometry": {"location": {"lat": r["lat"], "lng": r["lon"]},
+                     "location_type": "APPROXIMATE"},
+        "types": _feature_types(r.get("kind", "")),
+        "place_id": r.get("osm_id", ""),
+        "name": r.get("name"),
+        "address_components": _address_components(r),
+    }
+
+
 @app.get("/maps/api/geocode/json")
 async def geocode(request: Request):
     """Google Geocoding shape. ?address=... forward; ?latlng=lat,lng reverse."""
@@ -409,16 +446,51 @@ async def geocode(request: Request):
         if not results:
             return {"status": "ZERO_RESULTS", "results": []}
 
+    return {"status": "OK", "results": [_geo_result(r) for r in results]}
+
+
+@app.get("/maps/api/place/nearbysearch/json")
+async def nearbysearch(request: Request):
+    """Google Nearby Search. ?location=lat,lng&radius=&type=<category>&keyword=<text>."""
+    require_key(request)
+    loc = request.query_params.get("location")
+    if not loc:
+        return JSONResponse({"status": "INVALID_REQUEST", "results": []}, status_code=400)
+    b = parse_latlng(loc)
+    params = {"lat": b["lat"], "lon": b["lon"],
+              "radius": request.query_params.get("radius", "1500")}
+    if request.query_params.get("type"):
+        params["category"] = request.query_params["type"]
+    if request.query_params.get("keyword"):
+        params["q"] = request.query_params["keyword"]
+    data = await geocoder("/nearby", params)
+    res = data.get("results", [])
     return {
-        "status": "OK",
+        "status": "OK" if res else "ZERO_RESULTS",
         "results": [{
-            "formatted_address": ", ".join(filter(None, [r["name"], r.get("extra")])),
-            "geometry": {"location": {"lat": r["lat"], "lng": r["lon"]},
-                         "location_type": "APPROXIMATE"},
-            "types": _feature_types(r.get("kind", "")),
+            "name": r["name"],
             "place_id": r.get("osm_id", ""),
-        } for r in results],
+            "geometry": {"location": {"lat": r["lat"], "lng": r["lon"]}},
+            "types": _feature_types(r.get("kind", "")),
+            "vicinity": _formatted(r),
+            "category": r.get("category"),
+            "distance_m": r.get("distance_m"),
+        } for r in res],
     }
+
+
+@app.get("/maps/api/place/details/json")
+async def place_details(request: Request):
+    """Google Place Details. ?place_id=<osm_id>."""
+    require_key(request)
+    pid = request.query_params.get("place_id")
+    if not pid:
+        return JSONResponse({"status": "INVALID_REQUEST", "result": {}}, status_code=400)
+    data = await geocoder("/detail", {"osm_id": pid})
+    r = data.get("result")
+    if not r:
+        return {"status": "NOT_FOUND", "result": {}}
+    return {"status": "OK", "result": _geo_result(r)}
 
 
 @app.get("/maps/api/place/autocomplete/json")

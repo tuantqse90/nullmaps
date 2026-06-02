@@ -55,7 +55,8 @@ def search(q: str, limit: int, bias: tuple[float, float] | None = None) -> list[
         return []
     rows = db().execute(
         """SELECT f.osm_id, f.name, f.folded, f.kind, f.lat, f.lon, f.extra,
-                  f.importance, bm25(features_fts) AS r
+                  f.importance, f.category, f.housenumber, f.street, f.city,
+                  f.district, f.region, bm25(features_fts) AS r
            FROM features_fts JOIN features f ON f.id = features_fts.rowid
            WHERE features_fts MATCH ?
            ORDER BY r LIMIT ?""",
@@ -117,12 +118,16 @@ def geocode(q: str = Query(...), limit: int = 5,
     return {"query": q, "results": search(q, min(limit, 20), _bias(lat, lon))}
 
 
+_FIELDS = ("f.osm_id, f.name, f.kind, f.lat, f.lon, f.extra, f.category, "
+          "f.housenumber, f.street, f.city, f.district, f.region")
+
+
 @app.get("/reverse")
 def reverse(lat: float = Query(...), lon: float = Query(...)) -> dict:
     # expand the R*Tree window until we have candidates, then nearest by haversine
     for d in (0.005, 0.02, 0.08, 0.3):
         rows = db().execute(
-            """SELECT f.osm_id, f.name, f.kind, f.lat, f.lon, f.extra
+            f"""SELECT {_FIELDS}
                FROM features_rtree t JOIN features f ON f.id = t.id
                WHERE t.minlat BETWEEN ? AND ? AND t.minlon BETWEEN ? AND ?""",
             (lat - d, lat + d, lon - d, lon + d),
@@ -133,3 +138,35 @@ def reverse(lat: float = Query(...), lon: float = Query(...)) -> dict:
             b["distance_m"] = round(haversine(lat, lon, b["lat"], b["lon"]), 1)
             return {"lat": lat, "lon": lon, "result": b}
     return {"lat": lat, "lon": lon, "result": None}
+
+
+@app.get("/nearby")
+def nearby(lat: float = Query(...), lon: float = Query(...),
+           category: str | None = None, q: str | None = None,
+           radius: int = 1500, limit: int = 20) -> dict:
+    """POIs near a point, optionally filtered by category (restaurant/fuel/...)
+    or a text query, sorted by distance."""
+    d = min(max(radius, 100), 50000) / 111000.0  # deg per ~meter
+    sql = (f"SELECT {_FIELDS} FROM features_rtree t JOIN features f ON f.id = t.id "
+           "WHERE t.minlat BETWEEN ? AND ? AND t.minlon BETWEEN ? AND ?")
+    args = [lat - d, lat + d, lon - d, lon + d]
+    if category:
+        sql += " AND f.category = ?"
+        args.append(category)
+    if q:
+        sql += " AND f.folded LIKE ?"
+        args.append(f"%{fold(q)}%")
+    rows = [dict(r) for r in db().execute(sql, args).fetchall()]
+    for r in rows:
+        r["distance_m"] = round(haversine(lat, lon, r["lat"], r["lon"]), 1)
+    rows = [r for r in rows if r["distance_m"] <= radius]
+    rows.sort(key=lambda r: r["distance_m"])
+    return {"lat": lat, "lon": lon, "results": rows[:min(limit, 50)]}
+
+
+@app.get("/detail")
+def detail(osm_id: str = Query(...)) -> dict:
+    """Place details by osm_id (place_id)."""
+    row = db().execute(f"SELECT {_FIELDS} FROM features f WHERE f.osm_id = ? LIMIT 1",
+                       (osm_id,)).fetchone()
+    return {"result": dict(row) if row else None}
