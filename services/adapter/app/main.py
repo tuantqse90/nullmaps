@@ -35,7 +35,7 @@ _geo_cache: TTLCache = TTLCache(maxsize=2048, ttl=120)  # geocoder read cache (2
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.http = httpx.AsyncClient()
+    app.state.http = httpx.AsyncClient(timeout=None)  # per-call timeouts are explicit; avoid httpx's hidden 5s default
     try:
         yield
     finally:
@@ -254,7 +254,8 @@ def healthz() -> dict:
         "status": "ok",
         "service": "nullmaps-adapter",
         "phase": 4,
-        "live": ["directions", "distancematrix", "geocode", "place/autocomplete"],
+        "live": ["directions", "distancematrix", "geocode", "place/autocomplete",
+                 "place/nearbysearch", "place/details"],
         "native": ["v1/isochrone", "v1/snap", "directions optimize:true"],
         "pending": [],
     }

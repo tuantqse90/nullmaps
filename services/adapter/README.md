@@ -1,10 +1,10 @@
 # services/adapter — Google/Goong-compat shim (Phase 4, REQUIRED)
 
-> **Status: all four endpoints live.** Directions + Matrix → Valhalla; Geocoding + Autocomplete →
-> the Phase-3 geocoder. Runs on `:8010` (8000 collides locally).
+> **Status: live.** Directions + Matrix → Valhalla; Geocoding/Reverse + Autocomplete + Nearby +
+> Place Details → the Phase-3 SQLite geocoder. Runs on `:8010` (8000 collides locally).
 
 **What:** A thin **FastAPI** shim that maps **Google Maps API** request/response shapes onto the native
-NullMaps engines (Martin, Valhalla, Photon).
+NullMaps engines (Martin, Valhalla, the lightweight SQLite geocoder).
 
 **Why:** My existing apps already speak Google Maps / Goong shapes. This adapter lets me repoint them at
 NullMaps **without rewriting client code**. Goong's REST endpoints mirror Google's closely, so a
@@ -19,8 +19,8 @@ repoint one app immediately. Likely mappings:
 |------------------------------|--------------------------|
 | Directions API               | Valhalla `/route`        |
 | Distance Matrix API          | Valhalla `/matrix`       |
-| Geocoding / Reverse API      | Photon `/geocode`,`/reverse` |
-| Places Autocomplete API      | Photon `/autocomplete`   |
+| Geocoding / Reverse API      | geocoder `/geocode`,`/reverse` |
+| Places Autocomplete API      | geocoder `/autocomplete`   |
 | Static/JS Maps (tiles)       | Martin / MapLibre        |
 
 ## ⚠️ Before writing routes
@@ -40,6 +40,9 @@ Single shared `API_KEY` from env — check it on every request. No key managemen
 | `GET /maps/api/distancematrix/json` | Valhalla `/sources_to_targets` | **live** |
 | `GET /maps/api/geocode/json` | geocoder `/geocode` (`address=`) or `/reverse` (`latlng=`) | **live** |
 | `GET /maps/api/place/autocomplete/json` | geocoder `/autocomplete` (`input=`) | **live** |
+| `GET /maps/api/place/nearbysearch/json` | geocoder `/nearby` (`location=&radius=&type=&keyword=`) | **live** |
+| `GET /maps/api/place/details/json` | geocoder `/detail` (`place_id=`) | **live** |
+| `GET /metrics` | — | key-gated (Prometheus text) |
 | `GET /healthz` | — | open (no key) |
 
 **Fleet extensions (NullMaps-native, no Google equivalent):**
