@@ -87,6 +87,16 @@ adapter-test: ## (Phase 4) Smoke-test the Google-compat adapter (Directions+Matr
 	echo ">> geocode (expect 503 until Phase 3):"; \
 	curl -s -o /dev/null -w "    HTTP %{http_code}\n" "http://localhost:$$P/maps/api/geocode/json?address=x&key=$$K"
 
+.PHONY: smoke
+smoke: ## Verify the whole live stack (tiles + routing + adapter) end-to-end
+	@echo "== tiles ==" ; \
+	curl -fsS -o /dev/null -w "  TileJSON HTTP %{http_code}\n" http://localhost:$(DEMO_PORT)/tiles/vietnam ; \
+	curl -fsS -o /dev/null -w "  demo page HTTP %{http_code}\n" http://localhost:$(DEMO_PORT)/ ; \
+	echo "== routing ==" ; $(MAKE) -s route-test ; $(MAKE) -s matrix-test ; \
+	echo "== adapter ==" ; $(MAKE) -s adapter-test
+
+DEMO_PORT ?= 8080
+
 .PHONY: down
 down: ## Stop all services
 	docker compose down
