@@ -50,6 +50,12 @@ make geo-test     # autocomplete / geocode / reverse
 ~308k named VN features, diacritic-folded. "Good enough," not Photon — see
 [`services/geocoder/README.md`](services/geocoder/README.md) for the ranking caveat.
 
+## AI address cleanup (Phase 5 — optional)
+
+Off by default (no-op). Set `LLM_MODEL` + a provider key (DashScope Qwen, local Qwen, any
+OpenAI-compatible endpoint) to enable. The adapter applies it only on opt-in `?normalize=1`,
+fail-open. `make norm-test`; details in [`services/normalizer/README.md`](services/normalizer/README.md).
+
 ## Roadmap
 
 | Phase | Capability | Engine | Status |
@@ -58,7 +64,7 @@ make geo-test     # autocomplete / geocode / reverse
 | 2 | Directions + Matrix (motorbike-first) | Valhalla | **done** |
 | 3 | Geocoding / Reverse / Autocomplete | lightweight (pyosmium+SQLite); Photon for prod | **done** |
 | 4 | Google/Goong-compat API (**required**) | FastAPI adapter | **done** (all 4 endpoints live) |
-| 5 | AI address helper (optional) | LiteLLM → Qwen | future |
+| 5 | AI address helper (optional) | LiteLLM → Qwen | **done** (ships no-op; enable with a key) |
 
 ## Stack
 

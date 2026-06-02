@@ -116,6 +116,15 @@ adapter-test: ## (Phase 4) Smoke-test the Google-compat adapter (Directions+Matr
 	curl -fsS "http://localhost:$$P/maps/api/place/autocomplete/json?input=ben+thanh&key=$$K" \
 	  | python3 -c "import sys,json;[print('   ',p['description']) for p in json.load(sys.stdin)['predictions'][:2]]"
 
+NORMALIZER_PORT ?= 8100
+
+.PHONY: norm-test
+norm-test: ## (Phase 5) Check the AI normalizer (no-op until an LLM is configured)
+	@curl -fsS "http://localhost:$(NORMALIZER_PORT)/healthz" \
+	  | python3 -c "import sys,json;d=json.load(sys.stdin);print('   enabled:',d['enabled'],'model:',d['model'])"; \
+	curl -fsS "http://localhost:$(NORMALIZER_PORT)/normalize?q=Q1+P.Ben+Nghe" \
+	  | python3 -c "import sys,json;d=json.load(sys.stdin);print('   ',repr(d['original']),'->',repr(d['normalized']),'('+d['engine']+')')"
+
 .PHONY: smoke
 smoke: ## Verify the whole live stack (tiles + routing + adapter) end-to-end
 	@echo "== tiles ==" ; \
@@ -123,6 +132,7 @@ smoke: ## Verify the whole live stack (tiles + routing + adapter) end-to-end
 	curl -fsS -o /dev/null -w "  demo page HTTP %{http_code}\n" http://localhost:$(DEMO_PORT)/ ; \
 	echo "== routing ==" ; $(MAKE) -s route-test ; $(MAKE) -s matrix-test ; \
 	echo "== geocoder ==" ; $(MAKE) -s geo-test ; \
+	echo "== normalizer ==" ; $(MAKE) -s norm-test ; \
 	echo "== adapter ==" ; $(MAKE) -s adapter-test
 
 DEMO_PORT ?= 8080

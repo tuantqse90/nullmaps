@@ -81,9 +81,25 @@ services:
       - MARTIN_URL=http://martin:3000
       - VALHALLA_URL=http://valhalla:8002
       - GEOCODER_URL=http://geocoder:2322
+      - NORMALIZER_URL=http://normalizer:8100
     depends_on:
       - valhalla
       - geocoder
+      - normalizer
+    restart: unless-stopped
+
+  # --- Phase 5 (optional): AI address normalizer ---------------------------
+  # No-op until an LLM is configured (LLM_MODEL + a provider key). Cleans messy
+  # VN address input before geocoding. The adapter calls it only on ?normalize=1.
+  normalizer:
+    build: ./services/normalizer
+    ports:
+      - "${NORMALIZER_PORT:-8100}:8100"
+    environment:
+      - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_API_BASE=${LLM_API_BASE:-}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
     restart: unless-stopped
 
   # --- Reserved: PostgreSQL + PostGIS --------------------------------------

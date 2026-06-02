@@ -32,7 +32,7 @@ opportunistically. Do **not** turn this into a data-collection company.
 | Geocoding / Reverse | lightweight pyosmium+SQLite (Photon for prod) | 3 |
 | Autocomplete / Places | same geocoder, diacritic-folded typeahead | 3 |
 | Google/Goong-compat API | FastAPI adapter shim | 4 |
-| AI address normalization | LiteLLM → Qwen (optional) | 5 |
+| AI address normalization | LiteLLM → Qwen (optional, no-op until configured) | 5 |
 
 ## Decisions already made (scaffold around these — do not relitigate)
 

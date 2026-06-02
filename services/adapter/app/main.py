@@ -30,6 +30,7 @@ app = FastAPI(title="NullMaps Adapter", version="0.4.0")
 API_KEY = os.environ.get("API_KEY", "")
 VALHALLA_URL = os.environ.get("VALHALLA_URL", "http://valhalla:8002").rstrip("/")
 GEOCODER_URL = os.environ.get("GEOCODER_URL", "http://geocoder:2322").rstrip("/")
+NORMALIZER_URL = os.environ.get("NORMALIZER_URL", "").rstrip("/")
 
 # Google travel modes / Goong vehicle -> Valhalla costing. Motorbike-first: an
 # unspecified or two-wheeler mode routes as a scooter (NullMaps' primary use case).
@@ -97,6 +98,20 @@ async def geocoder(path: str, params: dict) -> dict:
         except httpx.HTTPError as e:
             raise HTTPException(status_code=502, detail=f"geocoder unreachable: {e}")
     return r.json() if r.content else {}
+
+
+async def maybe_normalize(request: Request, text: str) -> str:
+    """Optional Phase-5 AI cleanup, opt-in via ?normalize=1. Fail-open: any
+    error or unconfigured normalizer returns the input unchanged."""
+    flag = (request.query_params.get("normalize") or "").lower()
+    if not NORMALIZER_URL or flag not in ("1", "true", "yes"):
+        return text
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            r = await client.get(f"{NORMALIZER_URL}/normalize", params={"q": text})
+        return (r.json().get("normalized") or text) if r.content else text
+    except httpx.HTTPError:
+        return text
 
 
 @app.get("/healthz")
@@ -223,6 +238,7 @@ async def geocode(request: Request):
         address = request.query_params.get("address")
         if not address:
             return JSONResponse({"status": "INVALID_REQUEST", "results": []}, status_code=400)
+        address = await maybe_normalize(request, address)
         data = await geocoder("/geocode", {"q": address, "limit": 5})
         results = data.get("results", [])
         if not results:
@@ -247,6 +263,7 @@ async def autocomplete(request: Request):
     text = request.query_params.get("input")
     if not text:
         return JSONResponse({"status": "INVALID_REQUEST", "predictions": []}, status_code=400)
+    text = await maybe_normalize(request, text)
     data = await geocoder("/autocomplete", {"q": text, "limit": 8})
     preds = data.get("results", [])
     if not preds:

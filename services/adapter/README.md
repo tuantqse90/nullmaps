@@ -42,6 +42,9 @@ Single shared `API_KEY` from env — check it on every request. No key managemen
 | `GET /maps/api/place/autocomplete/json` | geocoder `/autocomplete` (`input=`) | **live** |
 | `GET /healthz` | — | open (no key) |
 
+**Optional AI cleanup (Phase 5):** add `&normalize=1` to geocode/autocomplete to route the query
+through the normalizer service first (no-op unless an LLM is configured). Fail-open.
+
 **Travel mode → costing** (motorbike-first): unspecified / `two_wheeler` / `bike` / `scooter` →
 `motor_scooter`; `motorcycle` → `motorcycle`; `driving`/`car` → `auto`; `walking` → `pedestrian`;
 `bicycling` → `bicycle`. Accepts Google's `mode=` or Goong's `vehicle=`.
