@@ -26,6 +26,8 @@ def test_healthz_open_and_shape():
     assert body["status"] == "ok"
     assert body["service"] == "nullmaps-adapter"
     assert body["phase"] == 4
+    assert "directions" in body["live"]
+    assert "geocode" in body["pending"]
 
 
 def _fake_request(query="", header=None):

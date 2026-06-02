@@ -73,6 +73,20 @@ demo: ## Build tiles if missing, start services, print the demo URL
 	@echo ">> Demo:   http://localhost:$(DEMO_PORT)   (Ho Chi Minh City basemap)"
 	@echo ">> Martin: http://localhost:$(MARTIN_PORT)/catalog"
 
+ADAPTER_PORT ?= 8010
+
+.PHONY: adapter-test
+adapter-test: ## (Phase 4) Smoke-test the Google-compat adapter (Directions+Matrix live, geocode pending)
+	@K=$$(grep -E '^API_KEY=' .env | cut -d= -f2); P=$(ADAPTER_PORT); \
+	echo ">> directions (motorbike):"; \
+	curl -fsS "http://localhost:$$P/maps/api/directions/json?origin=10.7725,106.6980&destination=10.7951,106.7218&key=$$K" \
+	  | python3 -c "import sys,json;l=json.load(sys.stdin)['routes'][0]['legs'][0];print('   ',l['distance']['text'],l['duration']['text'])"; \
+	echo ">> distancematrix (2x2):"; \
+	curl -fsS "http://localhost:$$P/maps/api/distancematrix/json?origins=10.7725,106.6980|10.7800,106.7010&destinations=10.7626,106.6822|10.7691,106.7000&key=$$K" \
+	  | python3 -c "import sys,json;b=json.load(sys.stdin);print('   ',[[e.get('distance',{}).get('text','-') for e in r['elements']] for r in b['rows']])"; \
+	echo ">> geocode (expect 503 until Phase 3):"; \
+	curl -s -o /dev/null -w "    HTTP %{http_code}\n" "http://localhost:$$P/maps/api/geocode/json?address=x&key=$$K"
+
 .PHONY: down
 down: ## Stop all services
 	docker compose down

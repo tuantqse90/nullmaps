@@ -29,6 +29,17 @@ make route-test   # HCMC motorbike route   |   make matrix-test  # 2x2 matrix
 Native Valhalla on `:8002` — `POST /route`, `POST /sources_to_targets`, `costing=motor_scooter`.
 Details + gotchas: [`docs/runbook-phase2-routing.md`](docs/runbook-phase2-routing.md).
 
+## Google/Goong-compat adapter (Phase 4 — repoint your apps)
+
+```bash
+docker compose up -d adapter      # :8010
+make adapter-test                 # Directions + Matrix (live), geocode 503 (pending Phase 3)
+```
+
+Drop-in Google shapes: `GET /maps/api/directions/json`, `/distancematrix/json` (auth via `?key=` or
+`X-API-Key`). Motorbike-first by default. Geocoding/Autocomplete arrive with Phase 3.
+See [`services/adapter/README.md`](services/adapter/README.md).
+
 ## Roadmap
 
 | Phase | Capability | Engine | Status |
@@ -36,7 +47,7 @@ Details + gotchas: [`docs/runbook-phase2-routing.md`](docs/runbook-phase2-routin
 | 1 | Tiles + MapLibre SDK | Planetiler → PMTiles → Martin | **done** |
 | 2 | Directions + Matrix (motorbike-first) | Valhalla | **done** |
 | 3 | Geocoding / Reverse / Autocomplete | Photon | scaffolded |
-| 4 | Google/Goong-compat API (**required**) | FastAPI adapter | scaffolded |
+| 4 | Google/Goong-compat API (**required**) | FastAPI adapter | **partial** (Directions+Matrix live; geocoding pending Phase 3) |
 | 5 | AI address helper (optional) | LiteLLM → Qwen | future |
 
 ## Stack

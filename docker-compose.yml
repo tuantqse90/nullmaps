@@ -60,16 +60,21 @@ services:
   #   ports: ["${PHOTON_PORT:-2322}:2322"]
   #   volumes: [photon_data:/photon/photon_data]
 
-  # --- Phase 4 (reserved): Google/Goong-compat FastAPI adapter --------------
-  # adapter:
-  #   build: ./services/adapter
-  #   ports: ["${ADAPTER_PORT:-8000}:8000"]
-  #   environment:
-  #     - API_KEY=${API_KEY}
-  #     - MARTIN_URL=http://martin:3000
-  #     - VALHALLA_URL=http://valhalla:8002
-  #     - PHOTON_URL=http://photon:2322
-  #   depends_on: [martin]
+  # --- Phase 4: Google/Goong-compat FastAPI adapter ------------------------
+  # Live: /maps/api/directions/json, /maps/api/distancematrix/json -> Valhalla.
+  # Pending Phase 3: geocode + place/autocomplete return 503 until Photon is up.
+  adapter:
+    build: ./services/adapter
+    ports:
+      - "${ADAPTER_PORT:-8000}:8000"
+    environment:
+      - API_KEY=${API_KEY}
+      - MARTIN_URL=http://martin:3000
+      - VALHALLA_URL=http://valhalla:8002
+      - PHOTON_URL=http://photon:2322
+    depends_on:
+      - valhalla
+    restart: unless-stopped
 
   # --- Reserved: PostgreSQL + PostGIS --------------------------------------
   # postgis:

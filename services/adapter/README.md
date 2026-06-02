@@ -1,7 +1,7 @@
 # services/adapter — Google/Goong-compat shim (Phase 4, REQUIRED)
 
-> **Status: scaffolded as a real FastAPI service; endpoints built in Phase 4.**
-> Only the health check is live today.
+> **Status: live for Directions + Distance Matrix.** Geocoding + Autocomplete return
+> `503 UNAVAILABLE` until Phase 3 (Photon) is deployed. Runs on `:8010` (8000 collides locally).
 
 **What:** A thin **FastAPI** shim that maps **Google Maps API** request/response shapes onto the native
 NullMaps engines (Martin, Valhalla, Photon).
@@ -32,18 +32,37 @@ Do not build the full Google surface speculatively.
 
 Single shared `API_KEY` from env — check it on every request. No key management, no quotas.
 
+## Endpoints
+
+| Endpoint | Maps to | Status |
+|---|---|---|
+| `GET /maps/api/directions/json` | Valhalla `/route` | **live** |
+| `GET /maps/api/distancematrix/json` | Valhalla `/sources_to_targets` | **live** |
+| `GET /maps/api/geocode/json` | Photon | 503 (Phase 3) |
+| `GET /maps/api/place/autocomplete/json` | Photon | 503 (Phase 3) |
+| `GET /healthz` | — | open (no key) |
+
+**Travel mode → costing** (motorbike-first): unspecified / `two_wheeler` / `bike` / `scooter` →
+`motor_scooter`; `motorcycle` → `motorcycle`; `driving`/`car` → `auto`; `walking` → `pedestrian`;
+`bicycling` → `bicycle`. Accepts Google's `mode=` or Goong's `vehicle=`.
+
+Valhalla returns polyline precision-6 shapes; the adapter re-encodes to precision-5 for Google's
+`overview_polyline` (`app/polyline.py`).
+
+## Run & verify
+
+```bash
+docker compose up -d adapter
+make adapter-test     # directions + matrix (live) + geocode 503
+```
+
+Verified (HCMC, against live Valhalla):
+- Directions default = motorbike **5.4 km / 9 min**; `mode=driving` = **6.3 km** (mode mapping works)
+- 2×2 distance matrix all routable; geocode → 503; missing key → 403
+
 ## Tests
 
-```bash
-cd services/adapter
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt pytest
-pytest -q          # health shape + shared-key auth (accept/reject) — 5 tests
-```
-
-## Run (current: health only)
-
-```bash
-docker compose up -d adapter        # after uncommenting the adapter service
-curl localhost:8000/healthz
-```
+`tests/` has unit tests (Valhalla mocked) for shape mapping, mode→costing, and polyline roundtrip.
+Pure-logic + integration (`make adapter-test`) are the authoritative checks. Note: Starlette's
+`TestClient` is flaky under Python 3.14 locally — run unit tests in CI (3.12) or rely on
+`make adapter-test` against the running container.
