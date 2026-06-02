@@ -69,7 +69,12 @@ fi
 if [ "${REFRESH_TILES:-0}" = "1" ]; then
   if $N docker run --rm -v "$ROOT/data:/data" ghcr.io/onthegomap/planetiler:latest \
        --osm-path=/data/raw/vietnam-latest.osm.pbf --download --output=/data/vietnam.pmtiles --force; then
-    $COMPOSE restart martin >/dev/null && wait_healthy martin 60 && log "tiles rebuilt"
+    if $COMPOSE restart martin >/dev/null && wait_healthy martin 60; then
+      log "tiles rebuilt"
+    else
+      alert "martin unhealthy after tiles rebuild — manual attention needed"
+      ERRORS=$((ERRORS + 1))
+    fi
   else
     alert "tiles rebuild failed — keeping previous PMTiles"
     ERRORS=$((ERRORS + 1))

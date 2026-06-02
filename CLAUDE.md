@@ -87,7 +87,7 @@ nullmaps/
     geocoder/   # Photon setup + VN import                       (Phase 3)
     adapter/    # FastAPI Google/Goong-compat shim               (Phase 4)
   data/raw/     # OSM extracts (gitignored)
-  infra/        # Coolify config, env templates
+  infra/        # VPS deploy + ops scripts, scheduler units, env templates
   docs/         # architecture + runbooks
 ```
 
