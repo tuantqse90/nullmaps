@@ -39,16 +39,33 @@
 		reverse_proxy adapter:8000
 	}
 
-	# Tiles + glyphs (read-only basemap). Force X-Forwarded-Proto so Martin emits
-	# https TileJSON URLs behind TLS (otherwise the map blanks on mixed-content).
-	handle /tiles/* {
+	# Glyphs + sprites: effectively immutable until a data rebuild -> long cache.
+	@assets path /tiles/font/* /tiles/sprite/*
+	handle @assets {
+		header Cache-Control "public, max-age=604800, immutable"
 		reverse_proxy martin:3000 {
 			header_up X-Forwarded-Proto https
 			header_up X-Forwarded-Host {host}
 		}
 	}
 
-	# Demo page + style.json (read-only)
+	# Vector tiles + TileJSON: refreshed ~monthly -> 1-day cache.
+	handle /tiles/* {
+		header Cache-Control "public, max-age=86400"
+		reverse_proxy martin:3000 {
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-Host {host}
+		}
+	}
+
+	# Style JSON: short cache so edits land fast.
+	@style path /style.json /style-dark.json
+	handle @style {
+		header Cache-Control "public, max-age=3600"
+		reverse_proxy demo:80
+	}
+
+	# Demo page (read-only)
 	handle {
 		reverse_proxy demo:80
 	}
