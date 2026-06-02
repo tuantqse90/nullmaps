@@ -24,7 +24,7 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 
 import httpx
-from cachetools import TTLCache
+from cachetools import TTLCache, LRUCache
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
@@ -130,9 +130,9 @@ def require_key(request: Request) -> None:
 
 # --- usage metrics + simple per-key rate limit (single uvicorn worker) -------
 RATE_PER_MIN = int(os.environ.get("RATE_LIMIT_PER_MIN", "600"))
-_counts: dict = defaultdict(int)          # (endpoint, status) -> total
-_by_key: dict = defaultdict(int)          # key -> total requests
-_rl: dict = defaultdict(lambda: [0, 0])   # key -> [minute_window, count]
+_counts: dict = defaultdict(int)              # (endpoint, status) -> total (finite key space)
+_by_key: LRUCache = LRUCache(maxsize=1024)    # key -> total requests (bounded)
+_rl: TTLCache = TTLCache(maxsize=1024, ttl=120)  # key -> [minute_window, count] (bounded)
 
 
 @app.middleware("http")
@@ -142,11 +142,12 @@ async def metrics_and_ratelimit(request: Request, call_next):
     if metered:
         key = request.query_params.get("key") or request.headers.get("x-api-key") or "anon"
         minute = int(time.time() // 60)
-        st = _rl[key]
-        if st[0] != minute:
-            st[0], st[1] = minute, 0
+        st = _rl.get(key)
+        if st is None or st[0] != minute:
+            st = [minute, 0]
         st[1] += 1
-        _by_key[key] += 1
+        _rl[key] = st
+        _by_key[key] = _by_key.get(key, 0) + 1
         if st[1] > RATE_PER_MIN:
             _counts[(path, 429)] += 1
             return JSONResponse(
