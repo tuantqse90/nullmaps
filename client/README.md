@@ -47,6 +47,20 @@ nm.addOverlay(map, myStationsGeoJSON, { color: "#163300" });
 
 `map()` adds navigation / scale / geolocate / fullscreen controls by default (`controls: false` to skip).
 
+### Static map image (client-side)
+
+```js
+// renders offscreen, returns a PNG data URL — no server renderer needed
+const png = await nm.staticImage(maplibregl, {
+  center: [106.70, 10.776], zoom: 13, size: [600, 400],
+  markers: [{ lng: 106.70, lat: 10.776, color: "#00B260" }],
+});
+img.src = png;  // or upload the data URL
+```
+
+For backend/email-side rendering (no browser), a server GL renderer (maplibre-gl-native /
+tileserver-gl) would be a separate service — deliberately not added to the shared box.
+
 ## Embed the map (MapLibre)
 
 ```html

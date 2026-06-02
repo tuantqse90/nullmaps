@@ -128,6 +128,34 @@ export class NullMaps {
     return id;
   }
 
+  // Render a static map image client-side (no server renderer needed). Returns a
+  // PNG data URL. opts: { center:[lng,lat], zoom, size:[w,h], theme, markers:[{lng,lat,color}], route }
+  staticImage(maplibregl, opts = {}) {
+    const { center = [106.700, 10.776], zoom = 12, size = [600, 400], theme = "light",
+      markers = [], route = null, pitch = 0, bearing = 0 } = opts;
+    return new Promise((resolve, reject) => {
+      const el = document.createElement("div");
+      el.style.cssText = `position:absolute;left:-9999px;top:0;width:${size[0]}px;height:${size[1]}px;`;
+      document.body.appendChild(el);
+      const map = new maplibregl.Map({
+        container: el, style: `${this.base}/${theme === "dark" ? "style-dark.json" : "style.json"}`,
+        center, zoom, pitch, bearing, interactive: false, attributionControl: false,
+        preserveDrawingBuffer: true,
+      });
+      const cleanup = () => { try { map.remove(); } catch {} el.remove(); };
+      map.on("error", (e) => { cleanup(); reject(e?.error || new Error("map error")); });
+      map.on("load", () => {
+        if (route) this.renderRoute(map, route, { fit: false });
+        for (const m of markers) new maplibregl.Marker({ color: m.color || "#00B260" })
+          .setLngLat([m.lng, m.lat]).addTo(map);
+        map.once("idle", () => {
+          try { const url = map.getCanvas().toDataURL("image/png"); cleanup(); resolve(url); }
+          catch (err) { cleanup(); reject(err); }
+        });
+      });
+    });
+  }
+
   // Encoded-polyline decoder (precision 5 by default) -> [[lat,lng], ...]
   static decodePolyline(str, precision = 5) {
     let index = 0, lat = 0, lng = 0;
