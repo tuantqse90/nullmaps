@@ -1,0 +1,9 @@
+[Unit]
+Description=Run NullMaps data refresh weekly (Sun 03:30 UTC)
+
+[Timer]
+OnCalendar=Sun *-*-* 03:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

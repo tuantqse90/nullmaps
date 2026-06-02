@@ -1,0 +1,10 @@
+[Unit]
+Description=NullMaps artifact backup to R2
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/nullmaps
+EnvironmentFile=-/opt/nullmaps/.env
+ExecStart=/usr/bin/env bash /opt/nullmaps/infra/backup.sh

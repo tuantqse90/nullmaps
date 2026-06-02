@@ -1,0 +1,5 @@
+# nullmaps — NullMaps ops schedule (managed by infra/install-cron.sh; do not edit between markers)
+*/5 * * * * cd /opt/nullmaps && bash infra/monitor.sh >> /var/log/nullmaps-monitor.log 2>&1
+30 3 * * 0 cd /opt/nullmaps && bash infra/refresh.sh >> /var/log/nullmaps-refresh.log 2>&1
+30 3 * * 3 cd /opt/nullmaps && bash infra/backup.sh  >> /var/log/nullmaps-backup.log 2>&1
+# end nullmaps
