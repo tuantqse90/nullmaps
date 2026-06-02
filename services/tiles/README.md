@@ -33,7 +33,8 @@ make demo                     # start Martin + demo, prints the URL
 
 - `style/style.json` — full MapLibre style (OMT layers: water, landcover/landuse, parks, buildings,
   roads with casing, labels, admin boundaries) + a **sovereignty** GeoJSON layer.
-- `style/index.html` — demo page (HCMC) that loads `/style.json`.
+- `style/index.html` — demo page (HCMC); honors `prefers-color-scheme` and has a light/dark toggle.
+- `style/style-dark.json` — dark MapLibre style, served at `/style-dark.json` (first-class endpoint).
 - `Caddyfile` — serves the demo + reverse-proxies Martin under `/tiles`.
 - `fonts/` — self-hosted glyph fonts (`make fonts` downloads Noto Sans); Martin serves them at
   `/tiles/font/{fontstack}/{range}`. Gitignored.

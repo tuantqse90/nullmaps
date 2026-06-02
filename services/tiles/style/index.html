@@ -14,15 +14,24 @@
       font: 13px/1.4 system-ui, sans-serif; background: #163300; color: #9fe870;
       padding: 6px 10px; border-radius: 6px;
     }
+    #theme-toggle {
+      position: absolute; top: 10px; right: 10px; z-index: 1;
+      font-size: 16px; line-height: 1; padding: 6px 9px; cursor: pointer;
+      background: #163300; color: #9fe870; border: none; border-radius: 6px;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <div id="badge">NullMaps · self-hosted VN basemap · Ho Chi Minh City</div>
+  <button id="theme-toggle" title="Toggle light / dark">🌓</button>
   <script>
     // PMTiles protocol (harmless when tiles come via Martin) — registered so a
     // pmtiles:// source also works if you serve the .pmtiles file directly.
     maplibregl.addProtocol("pmtiles", new pmtiles.Protocol().tile);
+
+    const styleUrl = (t) => (t === "dark" ? "/style-dark.json" : "/style.json");
+    let theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 
     // Full style (OMT layers + Hoàng Sa / Trường Sa labels), tiles + glyphs
     // both served by Martin behind Caddy /tiles — single origin, self-hosted.
@@ -30,9 +39,15 @@
       container: "map",
       center: [106.700, 10.776],   // Ho Chi Minh City (lon, lat)
       zoom: 11,
-      style: "/style.json"
+      style: styleUrl(theme)
     });
     map.addControl(new maplibregl.NavigationControl());
+
+    // Controls persist across setStyle (they're not part of the style document).
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+      theme = theme === "dark" ? "light" : "dark";
+      map.setStyle(styleUrl(theme));
+    });
   </script>
 </body>
 </html>
