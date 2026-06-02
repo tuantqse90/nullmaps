@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Self-heal + uptime probe for NullMaps. Runs from cron every few minutes.
-#  - restarts any NullMaps container marked unhealthy (Docker healthchecks only
-#    flag, they don't auto-restart)
-#  - logs a line if the public URL is not 200
+# Self-heal + uptime probe for NullMaps. Runs every few minutes (systemd timer / cron).
+#  - restarts any NullMaps container marked unhealthy (Docker healthchecks only flag)
+#  - alerts if the public URL is not 200
 # Optional alerting: set NULLMAPS_ALERT_WEBHOOK to POST failures to Slack/Discord.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 LOG=/var/log/nullmaps-monitor.log
+export LOG
+set -a; [ -f .env ] && . ./.env; set +a
 # shellcheck source=infra/lib.sh
 . "$(dirname "$0")/lib.sh"
 
