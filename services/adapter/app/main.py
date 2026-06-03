@@ -191,6 +191,20 @@ def with_radius(locs: list, radius: int) -> list:
     return [{**loc, "radius": radius} for loc in locs]
 
 
+def with_road_snap(locs: list, radius: int = 200,
+                   min_road_class: str = "residential") -> list:
+    """Snap copy that also excludes service/track edges via `search_filter`.
+
+    A point can snap to a disconnected service-road island that has no path to the
+    rest of the network — classically an airport/airfield centroid (taxiway service
+    roads) or a gated complex. Excluding `service`/`track` forces the snap onto the
+    nearest connected public road, so routing succeeds. Used only as a last-resort
+    retry after the normal (nearest-edge) attempts return "No path".
+    """
+    return [{**loc, "radius": radius,
+             "search_filter": {"min_road_class": min_road_class}} for loc in locs]
+
+
 def require_key(request: Request) -> None:
     """One shared key. Accept ?key= (Google style) or X-API-Key header."""
     supplied = request.query_params.get("key") or request.headers.get("x-api-key")
@@ -382,6 +396,10 @@ async def directions(request: Request):
         payload["locations"] = with_radius(locs, 200)   # one wider-radius retry
         data = await valhalla(endpoint, payload)
         trip = data.get("trip")
+    if not trip or trip.get("status") != 0:           # last resort: escape a snapped
+        payload["locations"] = with_road_snap(locs)   # service-road island (airport etc.)
+        data = await valhalla(endpoint, payload)
+        trip = data.get("trip")
     if not trip or trip.get("status") != 0:
         return JSONResponse({"status": "ZERO_RESULTS", "routes": [],
                              "error_message": data.get("error", "")}, status_code=200)
@@ -471,6 +489,16 @@ async def distance_matrix(request: Request):
                 for j, c in enumerate(row):
                     if c.get("distance") is None and m2[i][j].get("distance") is not None:
                         matrix[i][j] = m2[i][j]
+    if matrix is not None and any(c.get("distance") is None for row in matrix for c in row):
+        # last resort for still-unroutable cells: escape service-road islands
+        payload["sources"] = with_road_snap(sources)
+        payload["targets"] = with_road_snap(targets)
+        m3 = (await valhalla("/sources_to_targets", payload)).get("sources_to_targets")
+        if m3 is not None:
+            for i, row in enumerate(matrix):
+                for j, c in enumerate(row):
+                    if c.get("distance") is None and m3[i][j].get("distance") is not None:
+                        matrix[i][j] = m3[i][j]
     if matrix is None:
         return JSONResponse({"status": "ZERO_RESULTS", "rows": [],
                              "error_message": data.get("error", "")}, status_code=200)

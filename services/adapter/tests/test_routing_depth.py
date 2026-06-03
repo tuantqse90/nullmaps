@@ -138,6 +138,47 @@ def test_route_retries_on_zero_results(monkeypatch):
     assert r.json()["status"] == "OK"
 
 
+def test_route_escapes_service_road_island(monkeypatch):
+    """A point snapped to a disconnected service-road island (e.g. an airport
+    airfield centroid) fails the nearest-edge attempts; the adapter retries once
+    more excluding service roads (search_filter), which connects."""
+    m = load()
+    seen = []
+
+    async def flaky(path, payload):
+        seen.append(payload)
+        if all("search_filter" in loc for loc in payload["locations"]):
+            return await fake_route(path, payload)   # connects only once service roads excluded
+        return {"trip": {"status": 1}}               # "No path" on the nearest-edge attempts
+
+    monkeypatch.setattr(m, "valhalla", flaky)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/directions/json", params={
+        "origin": "10.77,106.69", "destination": "10.8175,106.6565", "key": "secret"})
+    assert len(seen) == 3                             # normal + radius-200 + road-snap
+    assert seen[-1]["locations"][0]["search_filter"]["min_road_class"] == "residential"
+    assert r.json()["status"] == "OK"
+
+
+def test_matrix_escapes_service_road_island(monkeypatch):
+    """Still-null matrix cells get the same service-road-excluding retry."""
+    m = load()
+    seen = []
+
+    async def flaky(path, payload):
+        seen.append(payload)
+        if "search_filter" in payload["targets"][0]:
+            return {"sources_to_targets": [[{"distance": 2.7, "time": 300}]]}
+        return {"sources_to_targets": [[{"distance": None}]]}   # null until service roads excluded
+
+    monkeypatch.setattr(m, "valhalla", flaky)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/distancematrix/json", params={
+        "origins": "10.77,106.69", "destinations": "10.8175,106.6565", "key": "secret"})
+    assert len(seen) == 3                             # normal + radius-200 + road-snap
+    assert r.json()["rows"][0]["elements"][0]["status"] == "OK"
+
+
 def test_route_reports_snapped_distance(monkeypatch):
     m = load()
 
