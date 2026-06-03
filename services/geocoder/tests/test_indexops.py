@@ -96,3 +96,13 @@ def test_merge_streets_safe_before_virtual_tables():
     feature_ids = {r[0] for r in con.execute("SELECT id FROM features").fetchall()}
     rtree_ids = {r[0] for r in con.execute("SELECT id FROM features_rtree").fetchall()}
     assert rtree_ids == feature_ids, f"Phantom R*Tree entries detected: {rtree_ids - feature_ids}"
+
+
+def test_importance_population_is_log_scaled():
+    import pytest
+    pytest.importorskip("osmium")                 # importer imports osmium at module top
+    from importer import importance
+    big = importance({"place": "city", "population": "1000000"}, "place")
+    mid = importance({"place": "city", "population": "100000"}, "place")
+    small = importance({"place": "city", "population": "10000"}, "place")
+    assert big > mid > small                       # smooth, not digit-count ties

@@ -14,6 +14,7 @@ Usage (inside the build container):
 """
 from __future__ import annotations
 
+import math
 import sqlite3
 import sys
 import unicodedata
@@ -55,15 +56,17 @@ PLACE_WEIGHT = {"city": 100, "municipality": 95, "town": 70, "borough": 60,
                 "suburb": 50, "quarter": 40, "village": 40, "neighbourhood": 30,
                 "hamlet": 20, "locality": 15}
 
+# Admin boundary prominence by OSM admin_level (VN: 4=province/city, 6=district, 8=ward).
+ADMIN_WEIGHT = {"4": 80, "6": 50, "8": 30}
+
 
 def importance(tags, kind: str) -> int:
     score = {"place": 30, "street": 10, "poi": 5, "address": 3}.get(kind, 0)
     if kind == "place":
         score = max(score, PLACE_WEIGHT.get(tags.get("place", ""), 20))
-    pop = tags.get("population", "")
-    if pop.replace(".", "").isdigit():
-        # log10-ish without importing math: digits of the population
-        score += min(40, (len(pop.split(".")[0]) - 1) * 8)
+    pop_raw = tags.get("population", "").replace(".", "").replace(",", "")
+    if pop_raw.isdigit():
+        score += min(40, round(math.log10(max(int(pop_raw), 1)) * 8))
     if "wikidata" in tags or "wikipedia" in tags:
         score += 20          # documented => notable
     if tags.get("capital") in ("yes", "2", "3", "4"):
@@ -128,6 +131,31 @@ class Handler(osmium.SimpleHandler):
                 k += 1
         if k:
             self._add(f"w{w.id}", w.tags, ys / k, xs / k)
+
+    def area(self, a):
+        if a.tags.get("boundary") != "administrative":
+            return
+        lvl = a.tags.get("admin_level")
+        name = a.tags.get("name")
+        if lvl not in ADMIN_WEIGHT or not name:
+            return
+        # representative point = center of the outer-ring bounding box
+        minlat = minlon = 1e9
+        maxlat = maxlon = -1e9
+        for outer in a.outer_rings():
+            for node in outer:
+                lat, lon = node.lat, node.lon
+                minlat, maxlat = min(minlat, lat), max(maxlat, lat)
+                minlon, maxlon = min(minlon, lon), max(maxlon, lon)
+        if minlat > maxlat:
+            return
+        oid = f"{'w' if a.from_way() else 'r'}{a.orig_id()}"
+        self.batch.append((oid, name, fold(name), "boundary",
+                           (minlat + maxlat) / 2, (minlon + maxlon) / 2, name,
+                           ADMIN_WEIGHT[lvl], "admin_level_" + lvl, "", "", "", "", ""))
+        self.count += 1
+        if len(self.batch) >= 5000:
+            self._flush()
 
 
 def build(pbf: str, out: str) -> int:
