@@ -19,7 +19,7 @@ function spriteNames(ii) {
   const names = [];
   for (let i = 1; i < pairEnd; i += 2) names.push(rest[i]);   // the value of each key/value pair
   if (hasDefault) names.push(rest[rest.length - 1]);
-  return names.filter((n) => typeof n === "string");
+  return names.filter((n) => typeof n === "string" && n !== "");
 }
 
 const missing = [];
