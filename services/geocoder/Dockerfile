@@ -16,6 +16,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 COPY importer.py .
 COPY indexops.py .
+COPY legacy_districts.json .
 COPY app ./app
 
 EXPOSE 2322

@@ -15,6 +15,7 @@ Usage (inside the build container):
 from __future__ import annotations
 
 import math
+import os
 import sqlite3
 import sys
 import unicodedata
@@ -174,13 +175,19 @@ def build(pbf: str, out: str) -> int:
     h._flush()
     db.commit()
 
-    from indexops import merge_streets, build_trigrams
+    from indexops import merge_streets, build_trigrams, insert_legacy_districts
     # merge_streets must run BEFORE the CREATE VIRTUAL TABLE statements below.
     # FTS5 content tables and R*Tree virtual tables reference features rows by id;
     # deleting rows after they are indexed causes "fts5: missing row N" errors and
     # leaves phantom entries in features_rtree that inflate reverse-geocode results.
     merge_streets(db)
     db.commit()
+
+    # Legacy pre-2025 districts (Quận/Huyện) so colloquial "Quận 1" still resolves.
+    legacy = os.path.join(os.path.dirname(os.path.abspath(__file__)), "legacy_districts.json")
+    if os.path.exists(legacy):
+        print(f">> inserted {insert_legacy_districts(db, legacy, fold)} legacy districts")
+        db.commit()
 
     # Rank: places first, then streets, then POIs/addresses (for result ordering)
     db.executescript("""

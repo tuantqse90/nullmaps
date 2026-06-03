@@ -2,9 +2,29 @@
 they can be unit-tested without osmium. Operate on an open sqlite3.Connection."""
 from __future__ import annotations
 
+import json
 import sqlite3
+from typing import Callable
 
 from app.vnorm import trigrams
+
+
+def insert_legacy_districts(con: sqlite3.Connection, path: str,
+                            fold: Callable[[str], str]) -> int:
+    """Index pre-2025 urban districts (Quận/Huyện, abolished in VN's 2025 admin reform)
+    as searchable boundary points, so colloquial 'Quận 1' / 'Bình Thạnh' still resolve
+    even though they are no longer OSM admin units. Idempotent. Returns the row count."""
+    with open(path, encoding="utf-8") as f:
+        rows = json.load(f)
+    con.execute("DELETE FROM features WHERE category = 'legacy_district'")
+    con.executemany(
+        "INSERT INTO features(osm_id, name, folded, kind, lat, lon, extra, importance, "
+        "category, housenumber, street, city, district, region) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [(f"legacy:{d['name']}", d["name"], fold(d["name"]), "boundary",
+          d["lat"], d["lon"], d.get("city", ""), 60, "legacy_district",
+          "", "", d.get("city", ""), "", "") for d in rows])
+    return len(rows)
 
 
 def build_trigrams(con: sqlite3.Connection) -> None:

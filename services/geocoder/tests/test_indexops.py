@@ -11,9 +11,13 @@ correct pre-index state. test_merge_streets_safe_before_virtual_tables explicitl
 verifies that merge_streets works with only the base features table and that a
 subsequent FTS build over the merged rows succeeds (no phantom-row corruption).
 """
+import json
+import os
 import sqlite3
+import tempfile
 
-from indexops import build_trigrams, merge_streets
+from indexops import build_trigrams, insert_legacy_districts, merge_streets
+from app.main import fold
 
 
 def _seed(rows):
@@ -108,3 +112,24 @@ def test_importance_population_is_log_scaled():
     mid = importance({"place": "city", "population": "5000"}, "place")
     small = importance({"place": "city", "population": "500"}, "place")
     assert big > mid > small                       # smooth, not digit-count ties
+
+
+def test_insert_legacy_districts_idempotent():
+    con = _seed([])
+    data = [{"name": "Quận 1", "lat": 10.776, "lon": 106.701, "city": "TP HCM"},
+            {"name": "Bình Thạnh", "lat": 10.81, "lon": 106.709, "city": "TP HCM"}]
+    fd, path = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    try:
+        n1 = insert_legacy_districts(con, path, fold)
+        n2 = insert_legacy_districts(con, path, fold)   # run twice -> idempotent
+    finally:
+        os.unlink(path)
+    assert n1 == 2 and n2 == 2
+    rows = con.execute(
+        "SELECT name, folded, kind, importance FROM features WHERE category='legacy_district'"
+    ).fetchall()
+    assert len(rows) == 2                               # not duplicated
+    q1 = [r for r in rows if r["folded"] == "quan 1"][0]
+    assert q1["name"] == "Quận 1" and q1["kind"] == "boundary" and q1["importance"] == 60

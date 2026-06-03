@@ -71,3 +71,15 @@ def test_reverse_returns_none_beyond_cap(monkeypatch):
     monkeypatch.setattr(m, "_conn", con)
     monkeypatch.setattr(m, "REVERSE_MAX_M", 5000.0)
     assert m.reverse(10.77, 106.70)["result"] is None    # ~1100 km away -> refused
+
+
+def test_q1_resolves_to_legacy_district(monkeypatch):
+    # Legacy "Quận 1" (importance 60) must outrank a co-named POI "Quán 19".
+    con = make_db([
+        {"name": "Quận 1", "kind": "boundary", "lat": 10.776, "lon": 106.701, "importance": 60},
+        {"name": "Quán 19", "kind": "poi", "lat": 10.78, "lon": 106.70, "importance": 5},
+        {"name": "Quán 187", "kind": "poi", "lat": 10.79, "lon": 106.69, "importance": 5},
+    ])
+    monkeypatch.setattr(m, "_conn", con)
+    res = m.search("q1", 5)
+    assert res and res[0]["name"] == "Quận 1"
