@@ -199,7 +199,13 @@ with:
       ],
 ```
 
-- [ ] **Step 2: Remove the dead trailing default from the icon-image match**
+- [ ] **Step 2: Replace the dead trailing default with a no-op empty-string fallback**
+
+> **Implementation note:** `gl-style-validate` requires an even number of arguments in a `match`
+> expression (each key must have a paired value, plus an explicit default). Removing the default
+> entirely (`["match", ..., "car", "car"]`) yields `'Expected an even number of arguments'` (exit 1).
+> The spec-compliant equivalent is to replace the dead `"attraction"` default with `["literal", ""]`,
+> which renders no icon for any unmatched class — functionally identical to no default.
 
 Replace:
 
@@ -214,7 +220,8 @@ with:
 
 ```json
           "car",
-          "car"
+          "car",
+          ["literal", ""]
         ],
 ```
 
@@ -238,7 +245,7 @@ with:
 - [ ] **Step 4: Verify the style is still spec-valid + icons covered**
 
 Run: `cd /Users/nullshift-labs/dev/nullmap && make style-lint`
-Expected: exit 0, `OK: all icon-image names have sprites (2 styles checked)`. (gl-style-validate accepts the new `all`/`step`/`symbol-sort-key` expressions; removing the dead default does not drop any sprite name since `attraction` is still a real match arm.)
+Expected: exit 0, `OK: all icon-image names have sprites (2 styles checked)`. (gl-style-validate accepts the new `all`/`step`/`symbol-sort-key` expressions; replacing the dead default with `["literal", ""]` does not drop any sprite name since `attraction` is still a real match arm, and the empty-string fallback is filtered out by `check-icons.mjs`.)
 
 - [ ] **Step 5: Commit**
 
@@ -258,7 +265,7 @@ git commit -m "feat(tiles): POI rank/zoom gating + symbol-sort-key (light style)
 
 `style-dark.json`'s `poi-icons` layer is a copy of `style.json`'s, so apply the **same three edits as Task 3** to `services/tiles/style/style-dark.json`:
 1. Wrap the filter (Task 3 Step 1 old → new).
-2. Remove the trailing default (Task 3 Step 2 old → new).
+2. Replace the dead trailing default with `["literal", ""]` (Task 3 Step 2 old → new; see Task 3 Step 2 note — bare removal is rejected by gl-style-validate).
 3. Add `symbol-sort-key` (Task 3 Step 3 old → new).
 
 First read the `poi-icons` layer in `style-dark.json` to confirm the three anchor strings match byte-for-byte (they are expected identical). If any anchor differs (e.g. a color line nearby), apply the same logical change to that file's exact text — the transformation is identical, only surrounding context could differ.
@@ -372,7 +379,7 @@ git commit -m "docs(tiles): document POI declutter + style lint"
 
 ## Self-Review (completed by plan author)
 
-- **Spec coverage:** §1 POI rank/zoom gating + sort-key + dead-default removal, both styles (T3 light + T4 dark) ✓ · §2 check-icons.mjs (T1) + style-lint (T2) + CI job (T5) ✓ · README note (T6) ✓. All success criteria mapped. Tooling (T1/T2) lands before the style edits so the "test" exists first.
+- **Spec coverage:** §1 POI rank/zoom gating + sort-key + dead-default replaced with `["literal",""]` no-op fallback (gl-style-validate requires an explicit fallback), both styles (T3 light + T4 dark) ✓ · §2 check-icons.mjs (T1) + style-lint (T2) + CI job (T5) ✓ · README note (T6) ✓. All success criteria mapped. Tooling (T1/T2) lands before the style edits so the "test" exists first.
 - **Placeholder scan:** none — full file for check-icons.mjs, exact old→new JSON blocks for the style edits, exact Makefile/CI snippets. T4 reuses T3's exact anchors with a documented fallback (read + apply the same logical change) because the two styles are copies — not a vague instruction.
 - **Type/name consistency:** the validator binary is `gl-style-validate` (verified) everywhere (Makefile T2, CI T5); `check-icons.mjs` (T1) is the same path invoked by `make style-lint` (T2) and CI (T5); `symbol-sort-key`/`["<=", ["get","rank"], ["step", ...]]` are identical in T3 and T4; the `node-version: "20"` CI runner has npx for the on-demand `@maplibre/maplibre-gl-style-spec` fetch.
 ```
