@@ -238,7 +238,11 @@
       if (v.length < 2) return close();
       try {
         const d = await api("/maps/api/place/autocomplete/json", { input: v });
-        const ps = d.predictions || [];
+        const seen = new Set();
+        const ps = (d.predictions || []).filter(p => {
+          const k = (p.structured_formatting?.main_text || p.description) + "|" + (p.structured_formatting?.secondary_text || "");
+          if (seen.has(k)) return false; seen.add(k); return true;
+        });
         if (!ps.length) { ac.innerHTML = '<div><small>Không tìm thấy</small></div>'; return ac.classList.add("open"); }
         ac.innerHTML = ps.slice(0, 6).map(p =>
           `<div data-name="${(p.structured_formatting?.main_text || p.description).replace(/"/g, "&quot;")}">` +
