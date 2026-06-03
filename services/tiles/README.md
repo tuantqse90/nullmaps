@@ -55,3 +55,12 @@ GeoJSON layer — correct for any user-facing app (the brief's sovereignty note)
 - Style editing: load `style/style.json` into **Maputnik** to author visually.
 - The demo still registers the PMTiles protocol so a `pmtiles://` source also works if you serve the
   raw `.pmtiles` file directly instead of via Martin.
+
+## POI declutter + style lint (④a)
+
+- The `poi-icons` layer is rank/zoom-gated: z14 shows only the most prominent POIs (`rank ≤ 3`),
+  relaxing to `rank ≤ 6` at z15 and all at z16+, with `symbol-sort-key` so prominent POIs win
+  collisions. Tune the `["step", ["zoom"], 3, 15, 6, 16, 99]` thresholds to taste.
+- `make style-lint` validates `style.json` + `style-dark.json` against the MapLibre style spec and
+  checks every `icon-image` name has a `sprites/<name>.svg` (`services/tiles/check-icons.mjs`). CI runs it.
+- Verify the visual effect with `make demo`: fewer POI pins in dense HCMC at z14, important POIs retained.
