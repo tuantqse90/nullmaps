@@ -10,7 +10,7 @@ GDAL="ghcr.io/osgeo/gdal:ubuntu-small-latest"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-docker run --rm -v "$TMP:/t" "$GDAL" python3 - <<'PY'
+docker run --rm -i -v "$TMP:/t" "$GDAL" python3 - <<'PY'
 from osgeo import gdal, osr
 import numpy as np
 elevs = np.array([[0.0, 100.0], [1000.0, 8000.0]], dtype=np.float32)
@@ -29,7 +29,7 @@ docker run --rm -v "$TMP:/t" "$GDAL" bash -c '
   gdal_merge.py -separate -o rgb.tif R.tif G.tif B.tif
 '
 
-docker run --rm -v "$TMP:/t" "$GDAL" python3 - <<'PY'
+docker run --rm -i -v "$TMP:/t" "$GDAL" python3 - <<'PY'
 from osgeo import gdal
 import numpy as np
 want = np.array([[0.0, 100.0], [1000.0, 8000.0]])
