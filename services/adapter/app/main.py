@@ -18,6 +18,7 @@ Pass it Google-style as ?key=... or as an X-API-Key header.
 """
 from __future__ import annotations
 
+import json
 import os
 import time
 from collections import defaultdict
@@ -151,6 +152,27 @@ def avoid_locations(request: Request) -> list:
             except HTTPException:
                 pass
     return out
+
+
+def avoid_zones(request: Request) -> list:
+    """?avoid_zones=<GeoJSON Polygon|MultiPolygon> -> Valhalla exclude_polygons
+    (a list of rings, each a list of [lon, lat]). Fail-open on malformed input;
+    reject oversize to respect valhalla.json max_exclude_polygons_length=10000."""
+    raw = request.query_params.get("avoid_zones")
+    if not raw or len(raw) > 10000:
+        return []
+    try:
+        geo = json.loads(raw)
+        t = geo.get("type")
+        if t == "Polygon":
+            rings = [geo["coordinates"][0]]
+        elif t == "MultiPolygon":
+            rings = [poly[0] for poly in geo["coordinates"]]
+        else:
+            return []
+        return [[[float(pt[0]), float(pt[1])] for pt in ring] for ring in rings]
+    except (ValueError, KeyError, TypeError, IndexError):
+        return []
 
 
 def require_key(request: Request) -> None:
@@ -322,6 +344,9 @@ async def directions(request: Request):
     excl = avoid_locations(request)
     if excl:
         payload["exclude_locations"] = excl
+    zones = avoid_zones(request)
+    if zones:
+        payload["exclude_polygons"] = zones
     if (request.query_params.get("alternatives") or "").lower() in ("1", "true", "yes") and not optimize:
         payload["alternates"] = 2
     data = await valhalla(endpoint, payload)
@@ -375,6 +400,9 @@ async def distance_matrix(request: Request):
     co = costing_options(request, costing)
     if co:
         payload["costing_options"] = co
+    zones = avoid_zones(request)
+    if zones:
+        payload["exclude_polygons"] = zones
     data = await valhalla("/sources_to_targets", payload)
     matrix = data.get("sources_to_targets")
     if matrix is None:

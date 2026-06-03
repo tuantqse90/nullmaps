@@ -65,3 +65,29 @@ def test_truck_dims_still_merge(monkeypatch):
         "mode": "truck", "height": "3.5", "use_tolls": "0", "key": "secret"})
     co = seen["payload"]["costing_options"]["truck"]
     assert co["height"] == 3.5 and co["use_tolls"] == 0.0
+
+
+import json as _json
+
+
+def test_avoid_zones_polygon_forwarded(monkeypatch):
+    m = load()
+    seen = _capture(m, fake_route)
+    poly = _json.dumps({"type": "Polygon",
+                        "coordinates": [[[106.6, 10.7], [106.7, 10.7], [106.7, 10.8], [106.6, 10.7]]]})
+    c = TestClient(m.app)
+    c.get("/maps/api/directions/json", params={
+        "origin": "10.77,106.69", "destination": "10.79,106.72",
+        "avoid_zones": poly, "key": "secret"})
+    ep = seen["payload"]["exclude_polygons"]
+    assert ep == [[[106.6, 10.7], [106.7, 10.7], [106.7, 10.8], [106.6, 10.7]]]
+
+
+def test_avoid_zones_malformed_ignored(monkeypatch):
+    m = load()
+    seen = _capture(m, fake_route)
+    c = TestClient(m.app)
+    c.get("/maps/api/directions/json", params={
+        "origin": "10.77,106.69", "destination": "10.79,106.72",
+        "avoid_zones": "not-json", "key": "secret"})
+    assert "exclude_polygons" not in seen["payload"]
