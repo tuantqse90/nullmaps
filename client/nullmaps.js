@@ -18,6 +18,13 @@ function registerPmtilesProtocol(maplibregl, pmtiles) {
   _pmtilesRegistered = true;
 }
 
+// Map a theme name to its served style file. "terrain" is the opt-in 3D variant.
+function styleFile(theme) {
+  if (theme === "dark") return "style-dark.json";
+  if (theme === "terrain") return "style-terrain.json";
+  return "style.json";
+}
+
 export class NullMaps {
   constructor({ baseUrl = "https://maps.nullshift.sh", key } = {}) {
     if (!key) throw new Error("NullMaps: `key` is required");
@@ -73,9 +80,10 @@ export class NullMaps {
     registerPmtilesProtocol(maplibregl, pmtiles);
     const m = new maplibregl.Map({
       container,
-      style: `${this.base}/${theme === "dark" ? "style-dark.json" : "style.json"}`,
+      style: `${this.base}/${styleFile(theme)}`,
       center: [106.700, 10.776],
       zoom: 11,
+      ...(theme === "terrain" ? { pitch: 60, maxPitch: 85 } : {}),
       ...mapOpts,
     });
     if (controls) {
@@ -153,7 +161,7 @@ export class NullMaps {
       el.style.cssText = `position:absolute;left:-9999px;top:0;width:${size[0]}px;height:${size[1]}px;`;
       document.body.appendChild(el);
       const map = new maplibregl.Map({
-        container: el, style: `${this.base}/${theme === "dark" ? "style-dark.json" : "style.json"}`,
+        container: el, style: `${this.base}/${styleFile(theme)}`,
         center, zoom, pitch, bearing, interactive: false, attributionControl: false,
         preserveDrawingBuffer: true,
       });
