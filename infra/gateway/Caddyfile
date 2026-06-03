@@ -65,7 +65,18 @@
 		reverse_proxy demo:80
 	}
 
-	# Demo page (read-only)
+	# Keyless in-browser app proxy: inject the API key server-side so the page
+	# never sees it. The app calls /app/maps/api/... ; Caddy strips /app and adds
+	# the key header. (Open to page visitors — fine for an internal demo.)
+	@app path /app/*
+	handle @app {
+		uri strip_prefix /app
+		reverse_proxy adapter:8000 {
+			header_up X-API-Key {$API_KEY}
+		}
+	}
+
+	# Demo / web app page (read-only)
 	handle {
 		reverse_proxy demo:80
 	}
