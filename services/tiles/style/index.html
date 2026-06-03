@@ -543,14 +543,19 @@
       openDir(); placePts(); map.flyTo({ center: [lng, lat], zoom: 15 });
     }, () => toast("Không lấy được vị trí"), { enableHighAccuracy: true, timeout: 8000 });
   };
+  function clearRoute() {            // drop the drawn route + alternatives + result card
+    routeGeo = altsGeo = null; allRoutes = []; paintRoute(); paintAlts();
+    altsBox.style.display = "none"; result.classList.remove("open");
+  }
   document.getElementById("swap").onclick = () => {
     [A, B] = [B, A];
     const f = document.getElementById("from"), t = document.getElementById("to"); [f.value, t.value] = [t.value, f.value]; placePts();
+    if (result.classList.contains("open")) clearRoute();   // old A→B route no longer matches
   };
   document.getElementById("clear-dir").onclick = () => {
     A = B = null; stops.forEach(s => s.row.remove()); stops = [];
     document.getElementById("from").value = ""; document.getElementById("to").value = "";
-    routeGeo = altsGeo = null; paintRoute(); paintAlts(); result.classList.remove("open"); clearMarkers();
+    clearRoute(); clearMarkers();
   };
 
   // drag-to-reorder stops
@@ -657,9 +662,7 @@
       allRoutes = d.routes; showRoutes(0);
     } catch (e) { toast("Lỗi kết nối"); }
   });
-  document.getElementById("r-close").onclick = () => {
-    result.classList.remove("open"); routeGeo = altsGeo = null; allRoutes = []; paintRoute(); paintAlts();
-  };
+  document.getElementById("r-close").onclick = () => { clearRoute(); clearMarkers(); };
 
   // ---- nearby (category chips around the current map center) ----
   const CATS = [

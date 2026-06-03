@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 def load(api_key="secret"):
     os.environ["API_KEY"] = api_key
+    os.environ.pop("RATE_LIMIT_PER_MIN", None)   # don't inherit a low limit leaked by another test file
     import app.main as m
     importlib.reload(m)
     return m
@@ -177,6 +178,61 @@ def test_matrix_escapes_service_road_island(monkeypatch):
         "origins": "10.77,106.69", "destinations": "10.8175,106.6565", "key": "secret"})
     assert len(seen) == 3                             # normal + radius-200 + road-snap
     assert r.json()["rows"][0]["elements"][0]["status"] == "OK"
+
+
+def test_matrix_whole_none_escalates_snap(monkeypatch):
+    """A whole-matrix Valhalla failure (sources_to_targets=None) now escalates snap
+    (radius + service-road-excluding) instead of returning ZERO_RESULTS outright."""
+    m = load()
+    seen = []
+
+    async def flaky(path, payload):
+        seen.append(payload)
+        if all("search_filter" in s for s in payload["sources"]):
+            return {"sources_to_targets": [[{"distance": 5.0, "time": 600}]]}
+        return {"sources_to_targets": None}          # whole-matrix failure until road-snap
+
+    monkeypatch.setattr(m, "valhalla", flaky)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/distancematrix/json", params={
+        "origins": "10.77,106.69", "destinations": "10.8,106.7", "key": "secret"})
+    assert len(seen) == 3                             # initial + radius-200 + road-snap
+    assert r.json()["rows"][0]["elements"][0]["status"] == "OK"
+
+
+def test_parse_latlng_rejects_nonfinite_and_out_of_range():
+    m = load()
+    c = TestClient(m.app)
+    for bad in ["nan,106.7", "1e500,106.7", "inf,106.7", "200,106.7", "10.7,400"]:
+        r = c.get("/maps/api/directions/json", params={
+            "origin": bad, "destination": "10.7,106.7", "key": "secret"})
+        assert r.status_code == 400, bad
+
+
+def test_isochrone_bad_contours_is_400_not_500():
+    m = load()
+    c = TestClient(m.app)
+    for bad in ["10,abc", "5;10", "0", "-5"]:
+        r = c.get("/v1/isochrone", params={
+            "location": "10.7,106.7", "contours": bad, "key": "secret"})
+        assert r.status_code == 400, bad
+
+
+def test_avoid_zones_caps_by_point_count_not_chars():
+    import json as _j
+    m = load()
+
+    class Req:
+        def __init__(self, qp):
+            self.query_params = qp
+
+    ring = [[106.123456 + i * 1e-6, 10.123456 + i * 1e-6] for i in range(600)]
+    poly = _j.dumps({"type": "Polygon", "coordinates": [ring]})
+    assert len(poly) > 10000                          # old char cap would have dropped this
+    out = m.avoid_zones(Req({"avoid_zones": poly}))
+    assert out and len(out[0]) == 600                 # kept: 600 points < 10000-vertex budget
+    big = _j.dumps({"type": "Polygon", "coordinates": [[[106.0, 10.0]] * 10001]})
+    assert m.avoid_zones(Req({"avoid_zones": big})) == []   # dropped: > 10000 vertices
 
 
 def test_route_reports_snapped_distance(monkeypatch):
