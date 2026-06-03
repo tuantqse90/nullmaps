@@ -54,3 +54,17 @@ jobs:
         run: for f in infra/*.sh; do bash -n "$f"; done
       - name: ShellCheck
         run: shellcheck -e SC1091,SC2086 infra/*.sh
+
+  style:
+    name: style validate + icon coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Validate styles + icon coverage
+        run: |
+          npx -y -p @maplibre/maplibre-gl-style-spec gl-style-validate services/tiles/style/style.json
+          npx -y -p @maplibre/maplibre-gl-style-spec gl-style-validate services/tiles/style/style-dark.json
+          node services/tiles/check-icons.mjs
