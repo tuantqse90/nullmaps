@@ -102,7 +102,9 @@ def test_importance_population_is_log_scaled():
     import pytest
     pytest.importorskip("osmium")                 # importer imports osmium at module top
     from importer import importance
-    big = importance({"place": "city", "population": "1000000"}, "place")
-    mid = importance({"place": "city", "population": "100000"}, "place")
-    small = importance({"place": "city", "population": "10000"}, "place")
+    # Use populations all below the cap boundary (100K → log10*8=40 hits cap).
+    # 50000 → ~38, 5000 → ~30, 500 → ~22 — all distinct and below cap=40.
+    big = importance({"place": "city", "population": "50000"}, "place")
+    mid = importance({"place": "city", "population": "5000"}, "place")
+    small = importance({"place": "city", "population": "500"}, "place")
     assert big > mid > small                       # smooth, not digit-count ties
