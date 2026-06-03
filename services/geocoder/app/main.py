@@ -17,6 +17,8 @@ import unicodedata
 
 from fastapi import FastAPI, Query
 
+from app.vnorm import normalize_query, trigrams
+
 DB_PATH = os.environ.get("GEOCODER_DB", "/data/geocoder.db")
 KIND_RANK = {"place": 0, "street": 1, "poi": 2, "address": 3}
 
@@ -39,8 +41,8 @@ def fold(s: str) -> str:
 
 
 def fts_match(q: str) -> str:
-    """Build a prefix FTS5 query: each token becomes token* (typeahead)."""
-    toks = [t for t in fold(q).replace('"', " ").split() if t]
+    """Build a prefix FTS5 query from the VN-normalized, folded query."""
+    toks = [t for t in normalize_query(fold(q)).replace('"', " ").split() if t]
     return " ".join(f'"{t}"*' for t in toks)
 
 
@@ -62,7 +64,7 @@ def search(q: str, limit: int, bias: tuple[float, float] | None = None) -> list[
            ORDER BY r LIMIT ?""",
         (match, limit * 12),
     ).fetchall()
-    qf = fold(q)
+    qn = normalize_query(fold(q))
     out = [dict(r) for r in rows]
 
     def rank(x) -> tuple:
@@ -71,8 +73,8 @@ def search(q: str, limit: int, bias: tuple[float, float] | None = None) -> list[
             penalty = haversine(bias[0], bias[1], x["lat"], x["lon"]) / 1000.0 * BIAS_PER_KM
         # exact match first, then prefix, then most-prominent-and-nearest, then bm25
         return (
-            0 if x["folded"] == qf else 1,
-            0 if x["folded"].startswith(qf) else 1,
+            0 if x["folded"] == qn else 1,
+            0 if x["folded"].startswith(qn) else 1,
             -(x["importance"]) + penalty,
             x["r"],
         )

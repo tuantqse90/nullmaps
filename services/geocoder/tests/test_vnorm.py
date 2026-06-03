@@ -31,3 +31,10 @@ def test_trigrams_overlap_catches_typo():
     jac = shared / len(a | b)
     assert jac >= 0.5            # internal typo still highly similar
     assert not (trigrams("q1") & trigrams("nguyen hue"))  # unrelated -> no overlap
+
+
+def test_fts_match_uses_normalization():
+    from app.main import fts_match
+    # q1 expands to "quan 1"; existing behavior for plain queries is unchanged
+    assert fts_match("q1") == '"quan"* "1"*'
+    assert fts_match("ben thanh") == '"ben"* "thanh"*'
