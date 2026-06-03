@@ -626,37 +626,18 @@
       "source-layer": "poi",
       "minzoom": 14,
       "filter": [
-        "in",
+        "all",
         [
-          "get",
-          "class"
+          "in",
+          ["get", "class"],
+          ["literal", [
+            "restaurant", "cafe", "fast_food", "fuel", "hospital", "pharmacy",
+            "school", "college", "bank", "lodging", "parking", "bus", "grocery",
+            "supermarket", "park", "police", "fire_station", "place_of_worship",
+            "cinema", "attraction", "car"
+          ]]
         ],
-        [
-          "literal",
-          [
-            "restaurant",
-            "cafe",
-            "fast_food",
-            "fuel",
-            "hospital",
-            "pharmacy",
-            "school",
-            "college",
-            "bank",
-            "lodging",
-            "parking",
-            "bus",
-            "grocery",
-            "supermarket",
-            "park",
-            "police",
-            "fire_station",
-            "place_of_worship",
-            "cinema",
-            "attraction",
-            "car"
-          ]
-        ]
+        ["<=", ["get", "rank"], ["step", ["zoom"], 3, 15, 6, 16, 99]]
       ],
       "layout": {
         "icon-image": [
@@ -707,10 +688,11 @@
           "attraction",
           "car",
           "car",
-          "attraction"
+          ""
         ],
         "icon-size": 1,
         "icon-optional": false,
+        "symbol-sort-key": ["get", "rank"],
         "text-field": [
           "coalesce",
           [

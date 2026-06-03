@@ -208,3 +208,9 @@ matrix-test: ## (Phase 2) Smoke-test a 2x2 distance matrix (costing=motor_scoote
 .PHONY: backup-test
 backup-test: ## (ops) Verify the latest R2 backup is restorable (sqlite + pmtiles checks)
 	bash infra/restore-test.sh
+
+.PHONY: style-lint
+style-lint: ## (tiles) Validate styles vs the MapLibre spec + check icon/sprite coverage
+	npx -y -p @maplibre/maplibre-gl-style-spec gl-style-validate services/tiles/style/style.json
+	npx -y -p @maplibre/maplibre-gl-style-spec gl-style-validate services/tiles/style/style-dark.json
+	node services/tiles/check-icons.mjs
