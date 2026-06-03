@@ -175,6 +175,20 @@ def avoid_zones(request: Request) -> list:
         return []
 
 
+def snap_radius(request: Request) -> int:
+    """Per-location snap search radius (m). Lets borderline points snap to a road."""
+    try:
+        r = int(request.query_params.get("snap_radius") or 50)
+    except ValueError:
+        r = 50
+    return max(0, min(r, 200))
+
+
+def with_radius(locs: list, radius: int) -> list:
+    """Return a copy of each location with a snap `radius` set."""
+    return [{**loc, "radius": radius} for loc in locs]
+
+
 def require_key(request: Request) -> None:
     """One shared key. Accept ?key= (Google style) or X-API-Key header."""
     supplied = request.query_params.get("key") or request.headers.get("x-api-key")
@@ -336,7 +350,8 @@ async def directions(request: Request):
 
     endpoint = "/optimized_route" if (optimize and len(mids) >= 1) else "/route"
     costing = costing_for(request)
-    payload = {"locations": locs, "costing": costing, "units": "kilometers",
+    rad = snap_radius(request)
+    payload = {"locations": with_radius(locs, rad), "costing": costing, "units": "kilometers",
                "directions_options": {"language": language_for(request)}}
     co = costing_options(request, costing)
     if co:
@@ -351,6 +366,10 @@ async def directions(request: Request):
         payload["alternates"] = 2
     data = await valhalla(endpoint, payload)
     trip = data.get("trip")
+    if (not trip or trip.get("status") != 0) and rad < 200:
+        payload["locations"] = with_radius(locs, 200)   # one wider-radius retry
+        data = await valhalla(endpoint, payload)
+        trip = data.get("trip")
     if not trip or trip.get("status") != 0:
         return JSONResponse({"status": "ZERO_RESULTS", "routes": [],
                              "error_message": data.get("error", "")}, status_code=200)
@@ -395,7 +414,8 @@ async def distance_matrix(request: Request):
     targets = [parse_latlng(s) for s in destinations.split("|")]
 
     costing = costing_for(request)
-    payload = {"sources": sources, "targets": targets,
+    rad = snap_radius(request)
+    payload = {"sources": with_radius(sources, rad), "targets": with_radius(targets, rad),
                "costing": costing, "units": "kilometers"}
     co = costing_options(request, costing)
     if co:
@@ -405,6 +425,16 @@ async def distance_matrix(request: Request):
         payload["exclude_polygons"] = zones
     data = await valhalla("/sources_to_targets", payload)
     matrix = data.get("sources_to_targets")
+    if matrix is not None and rad < 200 and any(
+            c.get("distance") is None for row in matrix for c in row):
+        payload["sources"] = with_radius(sources, 200)
+        payload["targets"] = with_radius(targets, 200)
+        m2 = (await valhalla("/sources_to_targets", payload)).get("sources_to_targets")
+        if m2 is not None:
+            for i, row in enumerate(matrix):
+                for j, c in enumerate(row):
+                    if c.get("distance") is None and m2[i][j].get("distance") is not None:
+                        matrix[i][j] = m2[i][j]
     if matrix is None:
         return JSONResponse({"status": "ZERO_RESULTS", "rows": [],
                              "error_message": data.get("error", "")}, status_code=200)

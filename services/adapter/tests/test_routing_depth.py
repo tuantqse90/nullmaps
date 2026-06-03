@@ -91,3 +91,48 @@ def test_avoid_zones_malformed_ignored(monkeypatch):
         "origin": "10.77,106.69", "destination": "10.79,106.72",
         "avoid_zones": "not-json", "key": "secret"})
     assert "exclude_polygons" not in seen["payload"]
+
+
+def test_directions_default_snap_radius(monkeypatch):
+    m = load()
+    seen = _capture(m, fake_route)
+    c = TestClient(m.app)
+    c.get("/maps/api/directions/json", params={
+        "origin": "10.77,106.69", "destination": "10.79,106.72", "key": "secret"})
+    assert all(loc.get("radius") == 50 for loc in seen["payload"]["locations"])
+
+
+def test_matrix_retries_on_null_cell(monkeypatch):
+    m = load()
+    calls = {"n": 0}
+
+    async def flaky(path, payload):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"sources_to_targets": [[{"distance": None}]]}     # null on first pass
+        return {"sources_to_targets": [[{"distance": 2.7, "time": 300}]]}  # resolves on retry
+
+    monkeypatch.setattr(m, "valhalla", flaky)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/distancematrix/json", params={
+        "origins": "10.77,106.69", "destinations": "10.76,106.68", "key": "secret"})
+    assert calls["n"] == 2
+    assert r.json()["rows"][0]["elements"][0]["status"] == "OK"
+
+
+def test_route_retries_on_zero_results(monkeypatch):
+    m = load()
+    calls = {"n": 0}
+
+    async def flaky(path, payload):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"trip": {"status": 1}}            # non-OK on first pass
+        return await fake_route(path, payload)
+
+    monkeypatch.setattr(m, "valhalla", flaky)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/directions/json", params={
+        "origin": "10.77,106.69", "destination": "10.79,106.72", "key": "secret"})
+    assert calls["n"] == 2
+    assert r.json()["status"] == "OK"
