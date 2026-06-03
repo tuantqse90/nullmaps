@@ -36,3 +36,18 @@ How the unattended box stays correct, and what to do when it doesn't.
 - **Roll back a bad graph manually:** `mv services/routing/custom_files/valhalla_tiles.tar.bak
   services/routing/custom_files/valhalla_tiles.tar && docker compose restart valhalla`.
 - **Rotate the API key:** edit `.env`, `docker compose -f docker-compose.yml up -d`, update all clients.
+
+## Verify a geocoder reindex (③a accuracy)
+
+After `make geo-index` (or a `refresh.sh` run), sanity-check the new index:
+
+```bash
+DB=services/geocoder/data/geocoder.db
+sqlite3 "$DB" "SELECT count(*) FROM features WHERE kind='boundary';"   # > 0 (admin areas indexed)
+sqlite3 "$DB" "SELECT count(*) FROM trgm;"                              # > 0 (typo index built)
+# a known long street should now be a single representative row per district:
+sqlite3 "$DB" "SELECT district, count(*) FROM features WHERE folded='le loi' AND kind='street' GROUP BY district;"
+```
+
+Then spot-check the service: `curl 'localhost:2322/geocode?q=nguyn+hue'` (typo) returns Nguyễn Huệ,
+and `curl 'localhost:2322/geocode?q=q1'` returns Quận 1.

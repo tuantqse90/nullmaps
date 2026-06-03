@@ -63,3 +63,17 @@ Still lighter than Photon (no full address interpolation / global importance mod
 The index is a build artifact (`services/geocoder/data/geocoder.db`, gitignored). Re-run `make
 geo-index` after refreshing the OSM extract. Code changes to the service only need
 `docker compose build geocoder && docker compose up -d geocoder` (no reindex).
+
+## Accuracy features (③a)
+
+- **VN query normalization** (`app/vnorm.py`): `q1`→`quan 1`, `p3`→`phuong 3`, `tp`/`tx` expansion,
+  leading house-number stripped, leading `duong`/`đ.` dropped. Applied to every search.
+- **Typo tolerance**: a hand-built trigram-similarity index (`trgm` table, pg_trgm-style Jaccard) is
+  queried only when the strict FTS prefix returns nothing (so common-path latency is unchanged).
+  Adds roughly +50–100 MB to the index, built over distinct folded names.
+- **Admin boundaries**: `boundary=administrative` at admin_level 4/6/8 (province/district/ward) are
+  indexed as `kind='boundary'` centroids, so `Quận 1` / `Bình Thạnh` / `Phường Bến Nghé` are findable.
+- **Reverse**: prefers street/place/boundary over a co-located POI and refuses matches beyond
+  `GEOCODER_REVERSE_MAX_M` (default 5000 m) — set the env var to widen for sparse rural areas.
+- **Prominence**: population is parsed to an int and log10-scaled; same-name street segments within an
+  admin area are merged to one representative point.
