@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url)); // services/tiles
 const SPRITES = join(here, "sprites");
-const STYLES = ["style/style.json", "style/style-dark.json"];
+const STYLES = ["style/style.json", "style/style-dark.json", "style/style-terrain.json"];
 
 // Extract sprite names from an icon-image value: a bare string, or a
 // ["match", input, k0, v0, k1, v1, ..., default?] expression (values + default).

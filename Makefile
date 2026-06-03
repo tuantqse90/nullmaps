@@ -213,4 +213,5 @@ backup-test: ## (ops) Verify the latest R2 backup is restorable (sqlite + pmtile
 style-lint: ## (tiles) Validate styles vs the MapLibre spec + check icon/sprite coverage
 	npx -y -p @maplibre/maplibre-gl-style-spec gl-style-validate services/tiles/style/style.json
 	npx -y -p @maplibre/maplibre-gl-style-spec gl-style-validate services/tiles/style/style-dark.json
+	npx -y -p @maplibre/maplibre-gl-style-spec gl-style-validate services/tiles/style/style-terrain.json
 	node services/tiles/check-icons.mjs
