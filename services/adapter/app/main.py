@@ -19,6 +19,7 @@ Pass it Google-style as ?key=... or as an X-API-Key header.
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from collections import defaultdict
@@ -276,6 +277,14 @@ def dur_text(seconds: float) -> str:
     return f"{m//60} h {m%60} min"
 
 
+def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(h))
+
+
 async def valhalla(path: str, payload: dict) -> dict:
     try:
         r = await app.state.http.post(f"{VALHALLA_URL}{path}", json=payload, timeout=20)
@@ -383,13 +392,20 @@ async def directions(request: Request):
             leg_coords = decode(leg["shape"], precision=6)
             coords.extend(leg_coords)
             a, b = visit[i], visit[i + 1]
-            legs.append({
+            leg_entry = {
                 "distance": {"text": dist_text(meters), "value": round(meters)},
                 "duration": {"text": dur_text(secs), "value": round(secs)},
                 "start_location": {"lat": a["lat"], "lng": a.get("lon", a.get("lng"))},
                 "end_location": {"lat": b["lat"], "lng": b.get("lon", b.get("lng"))},
                 "steps": build_steps(leg, leg_coords),
-            })
+            }
+            oi = a.get("original_index")
+            if oi is not None and 0 <= oi < len(locs):
+                req = locs[oi]
+                snapped = haversine_m(a["lat"], a.get("lon", a.get("lng")), req["lat"], req["lon"])
+                if snapped > 25:
+                    leg_entry["snapped_distance_m"] = round(snapped, 1)
+            legs.append(leg_entry)
         r = {"summary": "", "legs": legs, "overview_polyline": {"points": encode(coords, precision=5)}}
         if optimize:
             r["waypoint_order"] = [v["original_index"] - 1 for v in visit[1:-1]

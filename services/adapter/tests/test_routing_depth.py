@@ -136,3 +136,23 @@ def test_route_retries_on_zero_results(monkeypatch):
         "origin": "10.77,106.69", "destination": "10.79,106.72", "key": "secret"})
     assert calls["n"] == 2
     assert r.json()["status"] == "OK"
+
+
+def test_route_reports_snapped_distance(monkeypatch):
+    m = load()
+
+    async def snapped_far(path, payload):
+        from app.polyline import encode
+        shape6 = encode([(10.800, 106.700), (10.79, 106.72)], precision=6)
+        # trip.locations are ~3 km from the requested origin (10.77,106.69)
+        return {"trip": {"status": 0,
+                         "locations": [{"lat": 10.800, "lon": 106.700, "original_index": 0},
+                                       {"lat": 10.79, "lon": 106.72, "original_index": 1}],
+                         "legs": [{"summary": {"length": 5.4, "time": 540}, "shape": shape6}]}}
+
+    monkeypatch.setattr(m, "valhalla", snapped_far)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/directions/json", params={
+        "origin": "10.77,106.69", "destination": "10.79,106.72", "key": "secret"})
+    leg = r.json()["routes"][0]["legs"][0]
+    assert leg["snapped_distance_m"] > 25
