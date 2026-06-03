@@ -14,6 +14,7 @@ echo "[restore] <- $SRC"
 rclone copy $F "$SRC/vietnam.pmtiles"     data/
 rclone copy $F "$SRC/hillshade.mbtiles"   data/ 2>/dev/null || true
 rclone copy $F "$SRC/contours.mbtiles"    data/ 2>/dev/null || true
+rclone copy $F "$SRC/terrain.mbtiles"     data/ 2>/dev/null || true
 rclone copy $F "$SRC/geocoder.db"         services/geocoder/data/
 rclone copy $F "$SRC/valhalla_tiles.tar"  services/routing/custom_files/
 rclone copy $F "$SRC/valhalla.json"       services/routing/custom_files/

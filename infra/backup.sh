@@ -19,6 +19,7 @@ ARTIFACTS=(
   "data/vietnam.pmtiles"
   "data/hillshade.mbtiles"
   "data/contours.mbtiles"
+  "data/terrain.mbtiles"
   "services/geocoder/data/geocoder.db"
   "services/routing/custom_files/valhalla_tiles.tar"
   "services/routing/custom_files/valhalla.json"
