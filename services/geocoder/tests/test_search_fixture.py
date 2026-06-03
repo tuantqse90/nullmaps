@@ -83,3 +83,15 @@ def test_q1_resolves_to_legacy_district(monkeypatch):
     monkeypatch.setattr(m, "_conn", con)
     res = m.search("q1", 5)
     assert res and res[0]["name"] == "Quận 1"
+
+
+def test_legacy_district_wins_fold_collision(monkeypatch):
+    # "Bình Thạnh" (legacy district, imp 60) and "Bình Thành" (commune, imp 70) both
+    # fold to "binh thanh"; the legacy district must win despite lower importance.
+    con = make_db([
+        {"name": "Bình Thành", "kind": "boundary", "lat": 10.5, "lon": 105.5, "importance": 70, "category": "admin_level_6"},
+        {"name": "Bình Thạnh", "kind": "boundary", "lat": 10.81, "lon": 106.709, "importance": 60, "category": "legacy_district"},
+    ])
+    monkeypatch.setattr(m, "_conn", con)
+    res = m.search("binh thanh", 5)
+    assert res and res[0]["name"] == "Bình Thạnh"

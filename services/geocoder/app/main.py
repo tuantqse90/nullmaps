@@ -115,10 +115,13 @@ def search(q: str, limit: int, bias: tuple[float, float] | None = None) -> list[
         penalty = 0.0
         if bias is not None:
             penalty = haversine(bias[0], bias[1], x["lat"], x["lon"]) / 1000.0 * BIAS_PER_KM
-        # exact match first, then prefix, then most-prominent-and-nearest, then bm25
+        # exact match first, then prefix, then legacy district (so a colloquial
+        # "Bình Thạnh"/"Quận 1" wins a fold-collision with a same-name commune),
+        # then most-prominent-and-nearest, then bm25
         return (
             0 if x["folded"] == qn else 1,
             0 if x["folded"].startswith(qn) else 1,
+            0 if x.get("category") == "legacy_district" else 1,
             -(x["importance"]) + penalty,
             x["r"],
         )
