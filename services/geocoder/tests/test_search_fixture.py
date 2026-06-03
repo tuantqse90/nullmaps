@@ -58,3 +58,16 @@ def test_typo_falls_back_to_trigram(seeded):
 def test_clean_query_does_not_need_fallback(seeded):
     res = m.search("le loi", 5)
     assert res and res[0]["name"] == "Lê Lợi"
+
+
+def test_reverse_prefers_street_over_colocated_poi(seeded):
+    # Bến Thành POI and Lê Lợi street are ~co-located; prefer the street.
+    r = m.reverse(10.7721, 106.6991)["result"]
+    assert r is not None and r["kind"] in ("street", "boundary", "place")
+
+
+def test_reverse_returns_none_beyond_cap(monkeypatch):
+    con = make_db([{"name": "Far POI", "kind": "poi", "lat": 21.0, "lon": 105.8}])  # Hanoi
+    monkeypatch.setattr(m, "_conn", con)
+    monkeypatch.setattr(m, "REVERSE_MAX_M", 5000.0)
+    assert m.reverse(10.77, 106.70)["result"] is None    # ~1100 km away -> refused

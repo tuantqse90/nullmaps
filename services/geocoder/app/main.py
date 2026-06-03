@@ -20,7 +20,8 @@ from fastapi import FastAPI, Query
 from app.vnorm import normalize_query, trigrams
 
 DB_PATH = os.environ.get("GEOCODER_DB", "/data/geocoder.db")
-KIND_RANK = {"place": 0, "street": 1, "poi": 2, "address": 3}
+KIND_RANK = {"place": 0, "boundary": 1, "street": 2, "poi": 3, "address": 4}
+REVERSE_MAX_M = float(os.environ.get("GEOCODER_REVERSE_MAX_M", "5000"))
 
 app = FastAPI(title="NullMaps Geocoder", version="0.3.0")
 _conn: sqlite3.Connection | None = None
@@ -169,18 +170,26 @@ _FIELDS = ("f.osm_id, f.name, f.kind, f.lat, f.lon, f.extra, f.category, "
 
 @app.get("/reverse")
 def reverse(lat: float = Query(...), lon: float = Query(...)) -> dict:
-    # expand the R*Tree window until we have candidates, then nearest by haversine
-    for d in (0.005, 0.02, 0.08, 0.3):
+    # expand the window up to the cap (~5 km ≈ 0.05°); within each band keep only
+    # candidates inside REVERSE_MAX_M, then prefer street/place/boundary over a POI
+    # at similar distance. Refuse anything beyond the cap.
+    for d in (0.005, 0.02, 0.05):
         rows = db().execute(
             f"""SELECT {_FIELDS}
                FROM features_rtree t JOIN features f ON f.id = t.id
                WHERE t.minlat BETWEEN ? AND ? AND t.minlon BETWEEN ? AND ?""",
             (lat - d, lat + d, lon - d, lon + d),
         ).fetchall()
-        if rows:
-            best = min(rows, key=lambda r: haversine(lat, lon, r["lat"], r["lon"]))
+        cands = []
+        for r in rows:
+            dist = haversine(lat, lon, r["lat"], r["lon"])
+            if dist <= REVERSE_MAX_M:
+                cands.append((r, dist))
+        if cands:
+            best, dist = min(
+                cands, key=lambda rd: (round(rd[1] / 100), KIND_RANK.get(rd[0]["kind"], 9), rd[1]))
             b = dict(best)
-            b["distance_m"] = round(haversine(lat, lon, b["lat"], b["lon"]), 1)
+            b["distance_m"] = round(dist, 1)
             return {"lat": lat, "lon": lon, "result": b}
     return {"lat": lat, "lon": lon, "result": None}
 
