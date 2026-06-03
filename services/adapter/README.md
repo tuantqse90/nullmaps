@@ -65,6 +65,22 @@ through the normalizer service first (no-op unless an LLM is configured). Fail-o
 Valhalla returns polyline precision-6 shapes; the adapter re-encodes to precision-5 for Google's
 `overview_polyline` (`app/polyline.py`).
 
+## Routing depth params (③b)
+
+- **Costing knobs** (any mode): `use_ferry`, `use_tolls`, `use_highways`, `use_living_streets` (0..1),
+  `top_speed` (km/h). E.g. keep scooters off expressways with `use_highways=0`. Truck dims
+  (`height`/`width`/`length`/`weight`/`axle_load`/`hazmat`) still apply for `mode=truck`.
+- **Avoid zones**: `avoid_zones=<GeoJSON Polygon|MultiPolygon>` (URL-encoded) → Valhalla
+  `exclude_polygons`. Malformed input is ignored; max 10000 chars. (`avoid=lat,lng|...` still excludes points.)
+- **Snap**: `snap_radius=<m>` (default 50, max 200) lets borderline points snap. A `ZERO_RESULTS`
+  route / null matrix cell triggers one wider-radius (200 m) retry. `/directions` legs include
+  `snapped_distance_m` when a point snapped more than 25 m from the request.
+- **Matrix addresses**: `addresses=true` fills `origin_addresses`/`destination_addresses` with
+  reverse-geocoded strings (N+M cached calls); default returns bare `lat,lng`.
+
+> Deferred (no historical speed dataset): `date_time`/time-dependent routing and predictive traffic —
+> with free-flow speeds they add no accuracy yet.
+
 ## Run & verify
 
 ```bash
