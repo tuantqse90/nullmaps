@@ -144,7 +144,7 @@ class Handler(osmium.SimpleHandler):
         maxlat = maxlon = -1e9
         for outer in a.outer_rings():
             for node in outer:
-                lat, lon = node.lat, node.lon
+                lat, lon = node.location.lat, node.location.lon  # match the proven way() handler
                 minlat, maxlat = min(minlat, lat), max(maxlat, lat)
                 minlon, maxlon = min(minlon, lon), max(maxlon, lon)
         if minlat > maxlat:
