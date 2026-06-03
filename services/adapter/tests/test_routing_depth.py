@@ -156,3 +156,34 @@ def test_route_reports_snapped_distance(monkeypatch):
         "origin": "10.77,106.69", "destination": "10.79,106.72", "key": "secret"})
     leg = r.json()["routes"][0]["legs"][0]
     assert leg["snapped_distance_m"] > 25
+
+
+async def fake_matrix_ok(path, payload):
+    return {"sources_to_targets": [[{"distance": 2.7, "time": 300}]]}
+
+
+async def fake_reverse_addr(path, params):
+    return {"result": {"name": "Chợ Bến Thành", "kind": "poi",
+                       "lat": params["lat"], "lon": params["lon"],
+                       "district": "Quận 1", "city": "HCMC"}}
+
+
+def test_addresses_opt_in(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "valhalla", fake_matrix_ok)
+    monkeypatch.setattr(m, "geocoder", fake_reverse_addr)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/distancematrix/json", params={
+        "origins": "10.77,106.69", "destinations": "10.76,106.68",
+        "addresses": "true", "key": "secret"}).json()
+    assert "Bến Thành" in r["origin_addresses"][0]
+    assert "Bến Thành" in r["destination_addresses"][0]
+
+
+def test_addresses_default_is_latlng(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "valhalla", fake_matrix_ok)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/distancematrix/json", params={
+        "origins": "10.77,106.69", "destinations": "10.76,106.68", "key": "secret"}).json()
+    assert r["origin_addresses"][0] == "10.77,106.69"

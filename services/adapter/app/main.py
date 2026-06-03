@@ -419,6 +419,23 @@ async def directions(request: Request):
     return {"status": "OK", "routes": routes}
 
 
+async def _matrix_addresses(request: Request, points: list) -> list:
+    """Reverse-geocode each point for human origin/destination_addresses. Opt-in via
+    ?addresses=true; cached via geocoder(); falls back to 'lat,lng' on any failure."""
+    if (request.query_params.get("addresses") or "").lower() not in ("1", "true", "yes"):
+        return [f'{p["lat"]},{p["lon"]}' for p in points]
+    out = []
+    for p in points:
+        bare = f'{p["lat"]},{p["lon"]}'
+        try:
+            data = await geocoder("/reverse", {"lat": p["lat"], "lon": p["lon"]})
+            r = data.get("result")
+            out.append(_formatted(r) if r else bare)
+        except HTTPException:
+            out.append(bare)
+    return out
+
+
 @app.get("/maps/api/distancematrix/json")
 async def distance_matrix(request: Request):
     require_key(request)
@@ -472,8 +489,8 @@ async def distance_matrix(request: Request):
 
     return {
         "status": "OK",
-        "origin_addresses": [f'{s["lat"]},{s["lon"]}' for s in sources],
-        "destination_addresses": [f'{t["lat"]},{t["lon"]}' for t in targets],
+        "origin_addresses": await _matrix_addresses(request, sources),
+        "destination_addresses": await _matrix_addresses(request, targets),
         "rows": rows,
     }
 
