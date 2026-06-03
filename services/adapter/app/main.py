@@ -105,24 +105,39 @@ COSTING = {
 }
 
 
+_USE_KNOBS = ("use_ferry", "use_tolls", "use_highways", "use_living_streets")
+
+
 def costing_options(request: Request, costing: str) -> dict:
-    """Per-costing options. For trucks, pass dimensions/limits so routing avoids
-    too-low/too-narrow/weight-restricted roads (logistics)."""
-    if costing != "truck":
-        return {}
+    """Per-costing options forwarded into Valhalla costing_options[costing].
+    General knobs (use_*/top_speed) apply to any costing — Valhalla ignores ones
+    that don't apply — and trucks additionally get dimensions/limits (logistics)."""
     q = request.query_params
-    truck = {}
-    for param, key in (("height", "height"), ("width", "width"), ("length", "length"),
-                       ("weight", "weight"), ("axle_load", "axle_load")):
-        v = q.get(param)
-        if v:
+    opts: dict = {}
+    for k in _USE_KNOBS:
+        v = q.get(k)
+        if v is not None:
             try:
-                truck[key] = float(v)
+                opts[k] = max(0.0, min(1.0, float(v)))   # Valhalla use_* are 0..1
             except ValueError:
                 pass
-    if (q.get("hazmat") or "").lower() in ("1", "true", "yes"):
-        truck["hazmat"] = True
-    return {"truck": truck} if truck else {}
+    ts = q.get("top_speed")
+    if ts:
+        try:
+            opts["top_speed"] = float(ts)
+        except ValueError:
+            pass
+    if costing == "truck":
+        for param in ("height", "width", "length", "weight", "axle_load"):
+            v = q.get(param)
+            if v:
+                try:
+                    opts[param] = float(v)
+                except ValueError:
+                    pass
+        if (q.get("hazmat") or "").lower() in ("1", "true", "yes"):
+            opts["hazmat"] = True
+    return {costing: opts} if opts else {}
 
 
 def avoid_locations(request: Request) -> list:
@@ -354,12 +369,13 @@ async def distance_matrix(request: Request):
     sources = [parse_latlng(s) for s in origins.split("|")]
     targets = [parse_latlng(s) for s in destinations.split("|")]
 
-    data = await valhalla("/sources_to_targets", {
-        "sources": sources,
-        "targets": targets,
-        "costing": costing_for(request),
-        "units": "kilometers",
-    })
+    costing = costing_for(request)
+    payload = {"sources": sources, "targets": targets,
+               "costing": costing, "units": "kilometers"}
+    co = costing_options(request, costing)
+    if co:
+        payload["costing_options"] = co
+    data = await valhalla("/sources_to_targets", payload)
     matrix = data.get("sources_to_targets")
     if matrix is None:
         return JSONResponse({"status": "ZERO_RESULTS", "rows": [],
