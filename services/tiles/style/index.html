@@ -25,29 +25,43 @@
       background: var(--panel); border: 1px solid var(--panel-b); border-radius: 14px; box-shadow: var(--shadow);
       overflow: visible; backdrop-filter: blur(6px);
     }
+    /* auto loading bar (shows while any /app request is in flight) */
+    #bar { position: absolute; top: 0; left: 0; right: 0; height: 3px; border-radius: 14px 14px 0 0; overflow: hidden;
+      opacity: 0; transition: opacity .2s; pointer-events: none; }
+    #bar.on { opacity: 1; }
+    #bar::before { content: ""; position: absolute; top: 0; bottom: 0; width: 35%; border-radius: 3px;
+      background: linear-gradient(90deg, transparent, var(--green), transparent); animation: slide 1.1s ease-in-out infinite; }
+    @keyframes slide { 0% { left: -35%; } 100% { left: 100%; } }
+
     .brand { display: flex; align-items: center; gap: 8px; padding: 11px 14px 3px; font-weight: 700; letter-spacing: .2px; }
     .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px rgba(0,178,96,.18); }
     .brand small { font-weight: 500; color: var(--muted); margin-left: auto; }
     .row { display: flex; gap: 8px; padding: 8px 12px; align-items: center; }
     .field { position: relative; flex: 1; }
     .field input {
-      width: 100%; padding: 10px 12px 10px 34px; border: 1px solid var(--panel-b); border-radius: 10px;
-      background: var(--field); font: inherit; color: inherit; outline: none;
+      width: 100%; padding: 10px 34px 10px 34px; border: 1px solid var(--panel-b); border-radius: 10px;
+      background: var(--field); font: inherit; color: inherit; outline: none; transition: border-color .15s, background .15s;
     }
-    .field input:focus { border-color: var(--green); background: #fff; }
+    .field input:focus { border-color: var(--green); background: #fff; box-shadow: 0 0 0 3px rgba(0,178,96,.12); }
     .field .pin { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); font-size: 14px; opacity: .7; }
+    .clearx { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px;
+      border-radius: 50%; display: none; place-items: center; cursor: pointer; color: var(--muted); font-size: 13px; }
+    .clearx.show { display: grid; } .clearx:hover { background: var(--panel-b); color: var(--ink); }
     .iconbtn {
       flex: 0 0 auto; width: 40px; height: 40px; border: 1px solid var(--panel-b); border-radius: 10px;
       background: #fff; cursor: pointer; font-size: 17px; color: var(--ink); display: grid; place-items: center;
+      transition: border-color .15s, background .15s, transform .05s;
     }
     .iconbtn:hover { border-color: var(--green); }
+    .iconbtn:active { transform: scale(.94); }
     .iconbtn.on { background: var(--green); color: #fff; border-color: var(--green); }
+    .iconbtn.sm { width: 34px; height: 38px; font-size: 15px; }
     .iconbtn.rm { width: 34px; height: 38px; font-size: 14px; }
 
     /* tool row (nearby / isochrone / share) */
     .tools { display: flex; gap: 6px; padding: 0 12px 8px; flex-wrap: wrap; }
     .tools button { flex: 1 1 auto; padding: 7px 8px; border: 1px solid var(--panel-b); background: #fff; color: var(--ink);
-      border-radius: 999px; cursor: pointer; font: inherit; white-space: nowrap; }
+      border-radius: 999px; cursor: pointer; font: inherit; white-space: nowrap; transition: border-color .15s, background .15s; }
     .tools button:hover { border-color: var(--green); }
     .tools button.on { background: var(--green); color: #fff; border-color: var(--green); }
 
@@ -55,34 +69,43 @@
     #cats { display: none; gap: 6px; padding: 0 12px 8px; flex-wrap: wrap; }
     #cats.open { display: flex; }
     .chip { padding: 6px 11px; border: 1px solid var(--panel-b); background: var(--field); border-radius: 999px;
-      cursor: pointer; font-size: 13px; white-space: nowrap; }
+      cursor: pointer; font-size: 13px; white-space: nowrap; transition: border-color .15s, background .15s; }
     .chip:hover { border-color: var(--green); background: #fff; }
 
     /* autocomplete dropdown */
     .ac { position: absolute; left: 0; right: 0; top: calc(100% + 4px); background: #fff; border: 1px solid var(--panel-b);
       border-radius: 10px; box-shadow: var(--shadow); z-index: 20; overflow: hidden; display: none; }
     .ac.open { display: block; }
-    .ac div { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #f0f2f4; }
+    .ac div { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #f0f2f4; display: flex; gap: 9px; align-items: flex-start; }
     .ac div:last-child { border-bottom: 0; }
-    .ac div:hover { background: #f5fbf7; }
+    .ac div:hover, .ac div.act { background: #f5fbf7; }
+    .ac .ico { flex: 0 0 auto; opacity: .8; }
     .ac b { font-weight: 600; } .ac small { color: var(--muted); display: block; }
 
     /* directions block */
     #dir { display: none; padding: 0 0 8px; }
     #dir.open { display: block; }
     .stop .pin { font-size: 12px; }
-    .subrow { display: flex; align-items: center; gap: 10px; padding: 2px 12px 6px 52px; }
+    .subrow { display: flex; align-items: center; gap: 12px; padding: 2px 12px 6px 52px; flex-wrap: wrap; }
     .linkbtn { background: none; border: 0; color: var(--green-d); cursor: pointer; font: 600 13px system-ui; padding: 0; }
-    body.dark .linkbtn { color: #9fe870; }
+    .linkbtn:hover { text-decoration: underline; }
+    .linkbtn.muted { color: var(--muted); font-weight: 500; }
+    body.dark .linkbtn { color: #9fe870; } body.dark .linkbtn.muted { color: var(--muted); }
     .opt { display: flex; align-items: center; gap: 6px; margin-left: auto; color: var(--muted); cursor: pointer; user-select: none; }
     .modes { display: flex; gap: 6px; padding: 2px 12px 8px 52px; }
     .modes button { flex: 1; padding: 7px 0; border: 1px solid var(--panel-b); background: #fff; border-radius: 9px;
-      cursor: pointer; font-size: 16px; }
+      cursor: pointer; font-size: 16px; transition: background .15s; }
     .modes button.on { background: var(--green-d); color: #9fe870; border-color: var(--green-d); }
     .go { margin: 2px 12px 0; }
     .go button { width: 100%; padding: 11px; border: 0; border-radius: 10px; background: var(--green); color: #fff;
-      font: 600 14px system-ui; cursor: pointer; }
+      font: 600 14px system-ui; cursor: pointer; transition: filter .15s; }
+    .go button:hover { filter: brightness(1.05); }
     .go button:active { transform: translateY(1px); }
+    .go button:disabled { opacity: .8; cursor: default; }
+
+    .spin { display: inline-block; width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.45);
+      border-top-color: #fff; border-radius: 50%; animation: sp .7s linear infinite; vertical-align: -2px; margin-right: 7px; }
+    @keyframes sp { to { transform: rotate(360deg); } }
 
     /* result / list card */
     #result { display: none; border-top: 1px solid var(--panel-b); }
@@ -93,33 +116,44 @@
     .summ.list .eta { font-size: 16px; }
     .summ .km { color: var(--muted); }
     .summ .x { margin-left: auto; cursor: pointer; color: var(--muted); font-size: 18px; }
+    .summ .x:hover { color: var(--ink); }
     .steps { max-height: 38vh; overflow: auto; padding: 0 8px 8px; margin: 0; }
-    .steps li { list-style: none; display: flex; gap: 10px; padding: 8px 8px; border-radius: 8px; cursor: default; }
+    .steps li { list-style: none; display: flex; gap: 10px; padding: 8px 8px; border-radius: 8px; cursor: default; align-items: flex-start; }
     .steps li.pick { cursor: pointer; }
     .steps li:hover { background: #f5fbf7; }
     .steps li.leghdr { font-weight: 600; color: var(--green-d); background: var(--field); }
     body.dark .steps li.leghdr { color: #9fe870; }
-    .steps .n { flex: 0 0 22px; height: 22px; border-radius: 50%; background: var(--field); color: var(--muted);
+    .steps .n { flex: 0 0 24px; height: 24px; border-radius: 50%; background: var(--field); color: var(--muted);
       display: grid; place-items: center; font-size: 12px; font-weight: 600; }
+    .steps .n.mvi { color: var(--green-d); background: #eafaf1; font-size: 14px; }
+    body.dark .steps .n.mvi { color: #9fe870; background: #20302a; }
     .steps .d { color: var(--muted); font-size: 12px; }
+
+    /* custom svg pin markers */
+    .nm-pin { cursor: pointer; transition: transform .1s; will-change: transform; }
+    .nm-pin:hover { transform: scale(1.12); }
+    .nm-pin svg { display: block; filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
 
     /* theme switch */
     #theme { position: absolute; top: 12px; right: 12px; z-index: 5; display: flex; gap: 0;
       background: var(--panel); border: 1px solid var(--panel-b); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
-    #theme button { width: 42px; height: 42px; border: 0; background: transparent; cursor: pointer; font-size: 18px; }
+    #theme button { width: 42px; height: 42px; border: 0; background: transparent; cursor: pointer; font-size: 18px; transition: background .15s; }
+    #theme button:hover { background: rgba(0,178,96,.12); }
     #theme button.on { background: var(--green); }
 
     #toast { position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 9;
       background: #2b2f34; color: #fff; padding: 9px 16px; border-radius: 999px; font-size: 13px; box-shadow: var(--shadow);
       opacity: 0; transition: opacity .25s; pointer-events: none; max-width: 86vw; text-align: center; }
     #toast.show { opacity: 1; }
-    .ml-popup .maplibregl-popup-content { font: 13px system-ui; border-radius: 10px; padding: 10px 12px; }
+    .ml-popup .maplibregl-popup-content { font: 13px system-ui; border-radius: 10px; padding: 10px 12px; box-shadow: var(--shadow); }
+    body.dark .ml-popup .maplibregl-popup-content { background: #23272e; color: var(--ink); }
+    body.dark .ml-popup .maplibregl-popup-tip { border-top-color: #23272e; border-bottom-color: #23272e; }
 
     /* dark page chrome when the dark/terrain basemap is active */
     body.dark { --panel: rgba(26,29,33,.96); --panel-b: #313640; --ink: #e8edf2; --muted: #95a1ad; --field: #23272e; }
     body.dark .iconbtn, body.dark .modes button, body.dark .tools button, body.dark .ac,
     body.dark .field input:focus { background: #23272e; color: var(--ink); }
-    body.dark .ac div:hover, body.dark .steps li:hover, body.dark .chip:hover { background: #2a2f37; }
+    body.dark .ac div:hover, body.dark .ac div.act, body.dark .steps li:hover, body.dark .chip:hover { background: #2a2f37; }
     body.dark .ac div { border-bottom-color: #2a2f37; }
 
     /* phone layout */
@@ -135,11 +169,13 @@
   <div id="map"></div>
 
   <div id="panel">
+    <div id="bar"></div>
     <div class="brand"><span class="dot"></span> NullMaps <small>Việt Nam · tự host</small></div>
     <div class="row">
       <div class="field">
         <span class="pin">🔍</span>
         <input id="q" placeholder="Tìm địa điểm, đường, quận…" autocomplete="off" />
+        <span class="clearx" id="q-clear" title="Xóa">✕</span>
         <div class="ac" id="ac-q"></div>
       </div>
       <button class="iconbtn" id="dir-toggle" title="Chỉ đường">🧭</button>
@@ -157,15 +193,18 @@
         <div class="field"><span class="pin" style="color:#16a34a">A</span>
           <input id="from" placeholder="Điểm đi (gõ hoặc bấm bản đồ)" autocomplete="off" />
           <div class="ac" id="ac-from"></div></div>
+        <button class="iconbtn sm" id="my-loc" title="Vị trí của tôi">📍</button>
       </div>
       <div id="stops"></div>
       <div class="row" style="padding-top:0">
         <div class="field"><span class="pin" style="color:#dc2626">B</span>
           <input id="to" placeholder="Điểm đến (gõ hoặc bấm bản đồ)" autocomplete="off" />
           <div class="ac" id="ac-to"></div></div>
+        <button class="iconbtn sm" id="swap" title="Đảo chiều A ↔ B">⇅</button>
       </div>
       <div class="subrow">
         <button class="linkbtn" id="add-stop">+ Thêm điểm dừng</button>
+        <button class="linkbtn muted" id="clear-dir">Xóa hết</button>
         <label class="opt"><input type="checkbox" id="opt-chk" /> Tối ưu thứ tự</label>
       </div>
       <div class="modes">
@@ -195,21 +234,29 @@
   "use strict";
   maplibregl.addProtocol("pmtiles", new pmtiles.Protocol().tile);
 
-  // ---- keyless API proxy (gateway injects the key) ----
+  // ---- keyless API proxy (gateway injects the key) + auto loading bar ----
+  let inflight = 0;
+  const setBar = (on) => document.getElementById("bar").classList.toggle("on", on);
   const api = async (path, params) => {
-    const u = new URL(location.origin + "/app" + path);
-    for (const [k, v] of Object.entries(params)) if (v != null && v !== "") u.searchParams.set(k, v);
-    const r = await fetch(u);
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    return r.json();
+    inflight++; setBar(true);
+    try {
+      const u = new URL(location.origin + "/app" + path);
+      for (const [k, v] of Object.entries(params)) if (v != null && v !== "") u.searchParams.set(k, v);
+      const r = await fetch(u);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return await r.json();
+    } finally { if (--inflight <= 0) { inflight = 0; setBar(false); } }
   };
   const toast = (m) => { const t = document.getElementById("toast"); t.textContent = m; t.classList.add("show");
     clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2600); };
   const debounce = (fn, ms) => { let h; return (...a) => { clearTimeout(h); h = setTimeout(() => fn(...a), ms); }; };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const node = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
   const fmtKm = (m) => m >= 1000 ? (m / 1000).toFixed(m >= 10000 ? 0 : 1) + " km" : Math.round(m) + " m";
   const fmtMin = (s) => { const m = Math.round(s / 60); return m >= 60 ? Math.floor(m / 60) + " giờ " + (m % 60) + " phút" : m + " phút"; };
+  async function withBusy(btn, label, fn) {
+    const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = `<span class="spin"></span>${label}`;
+    try { return await fn(); } finally { btn.disabled = false; btn.innerHTML = orig; }
+  }
 
   // ---- polyline (precision 5) -> [[lat,lng], ...] ----
   function decodePolyline(str, precision = 5) {
@@ -287,21 +334,37 @@
   document.body.classList.toggle("dark", baseTheme === "dark");
   document.querySelector('#theme button[data-theme="' + baseTheme + '"]').classList.add("on");
 
-  // ---- markers ----
+  // ---- custom svg pin markers (letter / number / emoji inside a teardrop) ----
+  function pinEl(color, content, emoji) {
+    const el = document.createElement("div"); el.className = "nm-pin";
+    const inner = emoji
+      ? `<text x="15" y="18.5" text-anchor="middle" font-size="13">${content}</text>`
+      : `<circle cx="15" cy="14" r="8.5" fill="#fff"/><text x="15" y="18" text-anchor="middle" font-size="12" font-weight="700" fill="${color}">${esc(content)}</text>`;
+    el.innerHTML = `<svg width="30" height="40" viewBox="0 0 30 40" xmlns="http://www.w3.org/2000/svg">` +
+      `<path d="M15 1C7.8 1 2 6.8 2 14c0 9 13 25 13 25s13-16 13-25C28 6.8 22.2 1 15 1z" fill="${color}" stroke="#fff" stroke-width="2"/>` +
+      inner + `</svg>`;
+    return el;
+  }
   let markers = [];
   const clearMarkers = () => { markers.forEach(m => m.remove()); markers = []; };
-  function marker(lng, lat, color, label) {
-    const m = new maplibregl.Marker({ color }).setLngLat([lng, lat]);
-    if (label) m.setPopup(new maplibregl.Popup({ className: "ml-popup", offset: 28 }).setText(label));
+  function marker(lng, lat, color, label, content, emoji) {
+    const m = new maplibregl.Marker({ element: pinEl(color, content || "", emoji), anchor: "bottom" }).setLngLat([lng, lat]);
+    if (label) m.setPopup(new maplibregl.Popup({ className: "ml-popup", offset: 34 }).setText(label));
     m.addTo(map); markers.push(m); return m;
   }
 
-  // ---- autocomplete wiring (works for static + dynamically-added stop inputs) ----
+  // ---- autocomplete wiring (icons + keyboard nav; works for dynamic stop inputs) ----
+  const TYPE_ICON = (types) => {
+    const t = (types || []).join(" ");
+    if (/route|street/.test(t)) return "🛣️"; if (/locality|place|admin/.test(t)) return "🏙️";
+    return "📍";
+  };
   function attachAutocomplete(inputId, acId, onPick) {
     const input = document.getElementById(inputId), ac = document.getElementById(acId);
-    const close = () => ac.classList.remove("open");
+    let active = -1;
+    const close = () => { ac.classList.remove("open"); active = -1; };
     input.addEventListener("input", debounce(async () => {
-      const v = input.value.trim();
+      const v = input.value.trim(); active = -1;
       if (v.length < 2) return close();
       try {
         const d = await api("/maps/api/place/autocomplete/json", { input: v });
@@ -312,14 +375,25 @@
         });
         if (!ps.length) { ac.innerHTML = '<div><small>Không tìm thấy</small></div>'; return ac.classList.add("open"); }
         ac.innerHTML = ps.slice(0, 6).map(p =>
-          `<div data-name="${esc(p.structured_formatting?.main_text || p.description)}">` +
+          `<div data-name="${esc(p.structured_formatting?.main_text || p.description)}"><span class="ico">${TYPE_ICON(p.types)}</span><span>` +
           `<b>${esc(p.structured_formatting?.main_text || p.description)}</b>` +
           (p.structured_formatting?.secondary_text ? `<small>${esc(p.structured_formatting.secondary_text)}</small>` : "") +
-          `</div>`).join("");
+          `</span></div>`).join("");
         ac.querySelectorAll("div").forEach(el => el.onclick = () => { close(); onPick(el.dataset.name); });
         ac.classList.add("open");
       } catch (e) { toast("Lỗi kết nối"); }
     }, 250));
+    input.addEventListener("keydown", (e) => {
+      const items = [...ac.querySelectorAll("div[data-name]")];
+      if (!ac.classList.contains("open") || !items.length) return;
+      if (e.key === "ArrowDown") { e.preventDefault(); active = Math.min(active + 1, items.length - 1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); active = Math.max(active - 1, 0); }
+      else if (e.key === "Enter") { e.preventDefault(); (items[active] || items[0]).click(); return; }
+      else if (e.key === "Escape") { close(); return; }
+      else return;
+      items.forEach((el, i) => el.classList.toggle("act", i === active));
+      items[active]?.scrollIntoView({ block: "nearest" });
+    });
     input.addEventListener("blur", () => setTimeout(close, 180));
     return input;
   }
@@ -332,12 +406,15 @@
 
   // ---- search box ----
   let lastSearch = null;
+  const qInput = document.getElementById("q"), qClear = document.getElementById("q-clear");
+  qInput.addEventListener("input", () => qClear.classList.toggle("show", !!qInput.value));
+  qClear.onclick = () => { qInput.value = ""; qClear.classList.remove("show"); clearMarkers(); lastSearch = null; qInput.focus(); };
   attachAutocomplete("q", "ac-q", async (name) => {
-    document.getElementById("q").value = name;
+    qInput.value = name; qClear.classList.add("show");
     try {
       const p = await geocode(name);
       if (!p) return toast("Không tìm thấy");
-      clearMarkers(); marker(p.lng, p.lat, "#00b260", p.label);
+      clearMarkers(); marker(p.lng, p.lat, "#00b260", p.label, "");
       lastSearch = { lat: p.lat, lng: p.lng, q: name };
       map.flyTo({ center: [p.lng, p.lat], zoom: 16 });
       markers[0].togglePopup();
@@ -365,15 +442,38 @@
     if (p) { B = p; placePts(); } else toast("Không tìm thấy");
   });
 
+  // my location -> origin
+  document.getElementById("my-loc").onclick = () => {
+    if (!navigator.geolocation) return toast("Trình duyệt không hỗ trợ định vị");
+    toast("Đang lấy vị trí…");
+    navigator.geolocation.getCurrentPosition((pos) => {
+      const lng = pos.coords.longitude, lat = pos.coords.latitude;
+      A = { lng, lat, label: "Vị trí của tôi" }; document.getElementById("from").value = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+      openDir(); placePts(); map.flyTo({ center: [lng, lat], zoom: 15 });
+    }, () => toast("Không lấy được vị trí"), { enableHighAccuracy: true, timeout: 8000 });
+  };
+  // swap A <-> B
+  document.getElementById("swap").onclick = () => {
+    [A, B] = [B, A];
+    const f = document.getElementById("from"), t = document.getElementById("to"); [f.value, t.value] = [t.value, f.value];
+    placePts();
+  };
+  // clear everything in the directions panel
+  document.getElementById("clear-dir").onclick = () => {
+    A = B = null; stops.forEach(s => s.row.remove()); stops = [];
+    document.getElementById("from").value = ""; document.getElementById("to").value = "";
+    routeGeo = null; paintRoute(); result.classList.remove("open"); clearMarkers();
+  };
+
   function addStop(point) {
     const id = "stop" + (++stopSeq);
-    const row = node(
-      `<div class="row stop" style="padding-top:0;padding-bottom:4px">
-         <div class="field"><span class="pin" style="color:#d97706">◇</span>
-           <input id="${id}" placeholder="Điểm dừng (gõ hoặc bấm bản đồ)" autocomplete="off" />
-           <div class="ac" id="ac-${id}"></div></div>
-         <button class="iconbtn rm" title="Xóa điểm dừng">✕</button>
-       </div>`);
+    const row = document.createElement("div"); row.className = "row stop";
+    row.style.cssText = "padding-top:0;padding-bottom:4px";
+    row.innerHTML =
+      `<div class="field"><span class="pin" style="color:#d97706">◇</span>` +
+      `<input id="${id}" placeholder="Điểm dừng (gõ hoặc bấm bản đồ)" autocomplete="off" />` +
+      `<div class="ac" id="ac-${id}"></div></div>` +
+      `<button class="iconbtn rm" title="Xóa điểm dừng">✕</button>`;
     stopsBox.appendChild(row);
     const st = { id, lng: null, lat: null, label: null, row };
     stops.push(st);
@@ -392,12 +492,20 @@
 
   function placePts() {
     clearMarkers();
-    if (A) marker(A.lng, A.lat, "#16a34a", A.label || "Điểm đi");
-    stops.forEach((s, i) => { if (s.lat != null) marker(s.lng, s.lat, "#d97706", s.label || ("Điểm dừng " + (i + 1))); });
-    if (B) marker(B.lng, B.lat, "#dc2626", B.label || "Điểm đến");
+    if (A) marker(A.lng, A.lat, "#16a34a", A.label || "Điểm đi", "A");
+    stops.forEach((s, i) => { if (s.lat != null) marker(s.lng, s.lat, "#d97706", s.label || ("Điểm dừng " + (i + 1)), String(i + 1)); });
+    if (B) marker(B.lng, B.lat, "#dc2626", B.label || "Điểm đến", "B");
   }
 
-  document.getElementById("route-btn").onclick = async () => {
+  // maneuver -> arrow glyph (from the adapter's Google maneuver type)
+  const MVI = {
+    "turn-left": "↰", "turn-right": "↱", "turn-slight-left": "↖", "turn-slight-right": "↗",
+    "turn-sharp-left": "⮰", "turn-sharp-right": "⮱", "uturn-left": "⮌", "uturn-right": "⮍",
+    "straight": "↑", "merge": "⇢", "ramp-left": "↖", "ramp-right": "↗", "fork-left": "↖", "fork-right": "↗",
+    "roundabout-left": "↻", "roundabout-right": "↻", "ferry": "⛴", "depart": "🅐", "arrive": "🏁",
+  };
+
+  document.getElementById("route-btn").onclick = (e) => withBusy(e.currentTarget, "Đang tìm…", async () => {
     if (!A || !B) return toast("Chọn điểm đi và điểm đến");
     const vias = stops.filter(s => s.lat != null);
     const params = { origin: `${A.lat},${A.lng}`, destination: `${B.lat},${B.lng}`, mode };
@@ -417,15 +525,23 @@
       document.querySelector(".summ").classList.remove("list");
       document.getElementById("r-eta").textContent = fmtMin(totS);
       document.getElementById("r-km").textContent = fmtKm(totM) + (vias.length && optimize ? " · đã tối ưu" : "");
-      let n = 0, html = "";
+      let html = "";
       legs.forEach((leg, li) => {
         if (legs.length > 1) html += `<li class="leghdr"><span class="n">${li + 1}</span><span>Chặng ${li + 1} · ${leg.distance.text} · ${leg.duration.text}</span></li>`;
-        leg.steps.forEach(s => { n++; html += `<li><span class="n">${n}</span><span><span>${esc(s.html_instructions || "")}</span><span class="d"> · ${s.distance.text}</span></span></li>`; });
+        leg.steps.forEach(s => {
+          const a = s.start_location || {};
+          html += `<li class="pick" data-lat="${a.lat}" data-lng="${a.lng}"><span class="n mvi">${MVI[s.maneuver] || "•"}</span>` +
+            `<span><span>${esc(s.html_instructions || "")}</span><span class="d"> · ${s.distance.text}</span></span></li>`;
+        });
       });
-      document.getElementById("r-steps").innerHTML = html;
+      const steps = document.getElementById("r-steps"); steps.innerHTML = html;
+      steps.querySelectorAll("li.pick").forEach(li => li.onclick = () => {
+        const la = +li.dataset.lat, ln = +li.dataset.lng;
+        if (Number.isFinite(la) && Number.isFinite(ln)) map.flyTo({ center: [ln, la], zoom: 17, duration: 600 });
+      });
       result.classList.add("open");
     } catch (e) { toast("Lỗi kết nối"); }
-  };
+  });
   document.getElementById("r-close").onclick = () => {
     result.classList.remove("open"); routeGeo = null; paintRoute();
   };
@@ -438,12 +554,12 @@
     { t: "hotel", e: "🏨", n: "Khách sạn" }, { t: "marketplace", e: "🛒", n: "Chợ" },
   ];
   const catsBox = document.getElementById("cats");
-  catsBox.innerHTML = CATS.map(c => `<span class="chip" data-t="${c.t}" data-n="${c.n}">${c.e} ${c.n}</span>`).join("");
+  catsBox.innerHTML = CATS.map(c => `<span class="chip" data-t="${c.t}" data-n="${c.n}" data-e="${c.e}">${c.e} ${c.n}</span>`).join("");
   document.getElementById("t-near").onclick = (e) => {
     const open = catsBox.classList.toggle("open"); e.currentTarget.classList.toggle("on", open);
   };
-  catsBox.querySelectorAll(".chip").forEach(ch => ch.onclick = () => runNearby(ch.dataset.t, ch.dataset.n));
-  async function runNearby(type, label) {
+  catsBox.querySelectorAll(".chip").forEach(ch => ch.onclick = () => runNearby(ch.dataset.t, ch.dataset.n, ch.dataset.e));
+  async function runNearby(type, label, emoji) {
     const c = map.getCenter();
     try {
       const d = await api("/maps/api/place/nearbysearch/json", { location: `${c.lat},${c.lng}`, type, radius: 2500 });
@@ -451,7 +567,7 @@
       if (!res.length) return toast("Không có " + label + " gần đây");
       clearMarkers();
       res.forEach((r) => marker(r.geometry.location.lng, r.geometry.location.lat, "#7c3aed",
-        `${r.name}${r.distance_m ? " · " + Math.round(r.distance_m) + "m" : ""}`));
+        `${r.name}${r.distance_m ? " · " + Math.round(r.distance_m) + "m" : ""}`, emoji, true));
       showList(label, res);
     } catch (e) { toast("Lỗi kết nối"); }
   }
@@ -464,7 +580,9 @@
       `<li class="pick" data-i="${i}"><span class="n">${i + 1}</span><span><span>${esc(r.name)}</span>` +
       `<span class="d"> · ${esc(r.vicinity || "")}${r.distance_m ? " · " + Math.round(r.distance_m) + "m" : ""}</span></span></li>`).join("");
     document.querySelectorAll("#r-steps li.pick").forEach(li => li.onclick = () => {
-      const r = items[+li.dataset.i]; map.flyTo({ center: [r.geometry.location.lng, r.geometry.location.lat], zoom: 17 });
+      const r = items[+li.dataset.i], i = +li.dataset.i;
+      map.flyTo({ center: [r.geometry.location.lng, r.geometry.location.lat], zoom: 17 });
+      if (markers[i]) markers[i].togglePopup();
     });
     result.classList.add("open");
   }
@@ -475,17 +593,17 @@
   const modeLabel = () => ({ two_wheeler: "xe máy", driving: "ô tô", walking: "đi bộ" }[mode] || mode);
   isoBtn.onclick = () => {
     isoActive = !isoActive; isoBtn.classList.toggle("on", isoActive);
+    map.getCanvas().style.cursor = isoActive ? "crosshair" : "";
     if (isoActive) toast("Bấm lên bản đồ để xem vùng tới được (" + modeLabel() + ")");
     else { isoGeo = null; paintIso(); }
   };
   async function runIso(lng, lat) {
     try {
-      toast("Đang tính vùng tới được…");
       const d = await api("/v1/isochrone", { location: `${lat},${lng}`, contours: "5,10,15", mode });
       if (!d || !d.features || !d.features.length) return toast("Không tính được vùng");
       d.features.sort((a, b) => (b.properties.contour || 0) - (a.properties.contour || 0));  // big first -> concentric
       isoGeo = d; paintIso();
-      clearMarkers(); marker(lng, lat, "#0ea5e9", "Điểm xuất phát · 5/10/15 phút " + modeLabel());
+      clearMarkers(); marker(lng, lat, "#0ea5e9", "Điểm xuất phát · 5/10/15 phút " + modeLabel(), "⏱️", true);
       toast("Vùng tới được: 5 / 10 / 15 phút");
     } catch (e) { toast("Lỗi kết nối"); }
   }
@@ -527,10 +645,10 @@
     } else if (p.get("ll")) {
       const [la, ln] = p.get("ll").split(",").map(Number);
       if (Number.isFinite(la) && Number.isFinite(ln)) {
-        clearMarkers(); marker(ln, la, "#00b260", p.get("q") || "Vị trí");
+        clearMarkers(); marker(ln, la, "#00b260", p.get("q") || "Vị trí", "");
         lastSearch = { lat: la, lng: ln, q: p.get("q") || "" };
         map.flyTo({ center: [ln, la], zoom: p.get("z") ? +p.get("z") : 16, duration: 0 });
-        if (p.get("q")) document.getElementById("q").value = p.get("q");
+        if (p.get("q")) { qInput.value = p.get("q"); qClear.classList.add("show"); }
         markers[0].togglePopup();
       }
     }
