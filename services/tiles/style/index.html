@@ -72,20 +72,28 @@
       cursor: pointer; font-size: 13px; white-space: nowrap; transition: border-color .15s, background .15s; }
     .chip:hover { border-color: var(--green); background: #fff; }
 
-    /* autocomplete dropdown */
+    /* autocomplete + saved/recent dropdown */
     .ac { position: absolute; left: 0; right: 0; top: calc(100% + 4px); background: #fff; border: 1px solid var(--panel-b);
-      border-radius: 10px; box-shadow: var(--shadow); z-index: 20; overflow: hidden; display: none; }
+      border-radius: 10px; box-shadow: var(--shadow); z-index: 20; overflow: hidden; display: none; max-height: 60vh; overflow-y: auto; }
     .ac.open { display: block; }
-    .ac div { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #f0f2f4; display: flex; gap: 9px; align-items: flex-start; }
-    .ac div:last-child { border-bottom: 0; }
-    .ac div:hover, .ac div.act { background: #f5fbf7; }
-    .ac .ico { flex: 0 0 auto; opacity: .8; }
+    .ac div[data-name] { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #f0f2f4; display: flex; gap: 9px; align-items: flex-start; }
+    .ac div[data-name]:last-child { border-bottom: 0; }
+    .ac div[data-name]:hover, .ac div[data-name].act { background: #f5fbf7; }
+    .ac .ico { flex: 0 0 auto; opacity: .85; }
     .ac b { font-weight: 600; } .ac small { color: var(--muted); display: block; }
+    .ac .sv { padding: 8px 12px; display: flex; gap: 9px; align-items: flex-start; cursor: pointer; border-bottom: 1px solid #f0f2f4; }
+    .ac .sv:hover { background: #f5fbf7; }
+    .ac .sv .svx { margin-left: auto; color: var(--muted); padding: 0 4px; font-size: 13px; }
+    .ac .sv .svx:hover { color: var(--ink); }
+    .ac .svh { padding: 7px 12px 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 600; }
 
     /* directions block */
     #dir { display: none; padding: 0 0 8px; }
     #dir.open { display: block; }
     .stop .pin { font-size: 12px; }
+    .draghandle { cursor: grab; color: var(--muted); padding: 0 2px; align-self: center; font-size: 14px; user-select: none; }
+    .draghandle:active { cursor: grabbing; }
+    .stop.dragging { opacity: .45; }
     .subrow { display: flex; align-items: center; gap: 12px; padding: 2px 12px 6px 52px; flex-wrap: wrap; }
     .linkbtn { background: none; border: 0; color: var(--green-d); cursor: pointer; font: 600 13px system-ui; padding: 0; }
     .linkbtn:hover { text-decoration: underline; }
@@ -117,6 +125,11 @@
     .summ .km { color: var(--muted); }
     .summ .x { margin-left: auto; cursor: pointer; color: var(--muted); font-size: 18px; }
     .summ .x:hover { color: var(--ink); }
+    .alts { display: none; gap: 6px; padding: 2px 12px 8px; flex-wrap: wrap; }
+    .altchip { padding: 6px 10px; border: 1px solid var(--panel-b); background: #fff; border-radius: 999px; cursor: pointer; font: inherit; font-size: 13px; }
+    .altchip:hover { border-color: var(--green); }
+    .altchip.on { background: var(--green-d); color: #9fe870; border-color: var(--green-d); }
+    body.dark .altchip { background: #23272e; color: var(--ink); }
     .steps { max-height: 38vh; overflow: auto; padding: 0 8px 8px; margin: 0; }
     .steps li { list-style: none; display: flex; gap: 10px; padding: 8px 8px; border-radius: 8px; cursor: default; align-items: flex-start; }
     .steps li.pick { cursor: pointer; }
@@ -133,6 +146,13 @@
     .nm-pin { cursor: pointer; transition: transform .1s; will-change: transform; }
     .nm-pin:hover { transform: scale(1.12); }
     .nm-pin svg { display: block; filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
+
+    /* place popup with save actions */
+    .pp b { display: block; margin-bottom: 6px; }
+    .ppacts { display: flex; gap: 4px; flex-wrap: wrap; }
+    .ppacts button { border: 1px solid var(--panel-b); background: var(--field); border-radius: 8px; padding: 4px 7px;
+      font-size: 12px; cursor: pointer; color: var(--ink); }
+    .ppacts button:hover { border-color: var(--green); }
 
     /* theme switch */
     #theme { position: absolute; top: 12px; right: 12px; z-index: 5; display: flex; gap: 0;
@@ -153,8 +173,9 @@
     body.dark { --panel: rgba(26,29,33,.96); --panel-b: #313640; --ink: #e8edf2; --muted: #95a1ad; --field: #23272e; }
     body.dark .iconbtn, body.dark .modes button, body.dark .tools button, body.dark .ac,
     body.dark .field input:focus { background: #23272e; color: var(--ink); }
-    body.dark .ac div:hover, body.dark .ac div.act, body.dark .steps li:hover, body.dark .chip:hover { background: #2a2f37; }
-    body.dark .ac div { border-bottom-color: #2a2f37; }
+    body.dark .ac div[data-name]:hover, body.dark .ac div[data-name].act,
+    body.dark .ac .sv:hover, body.dark .steps li:hover, body.dark .chip:hover { background: #2a2f37; }
+    body.dark .ac div[data-name], body.dark .ac .sv { border-bottom-color: #2a2f37; }
 
     /* phone layout */
     @media (max-width: 560px) {
@@ -218,6 +239,7 @@
     <div id="result">
       <div class="summ"><span class="eta" id="r-eta"></span><span class="km" id="r-km"></span>
         <span class="x" id="r-close" title="Đóng">✕</span></div>
+      <div class="alts" id="alts"></div>
       <ul class="steps" id="r-steps"></ul>
     </div>
   </div>
@@ -258,6 +280,23 @@
     try { return await fn(); } finally { btn.disabled = false; btn.innerHTML = orig; }
   }
 
+  // ---- localStorage: saved places (home/work/star) + recent searches ----
+  const LS = {
+    get(k, d) { try { const v = JSON.parse(localStorage.getItem("nm_" + k)); return v == null ? d : v; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem("nm_" + k, JSON.stringify(v)); } catch (e) {} },
+  };
+  let recents = LS.get("recents", []);   // [{q,lat,lng,label}]
+  let saved = LS.get("saved", []);       // [{kind,name,lat,lng,label}]  kind: home|work|star
+  const savedOf = (kind) => saved.find(s => s.kind === kind);
+  function pushRecent(q, p) {
+    if (!q) return;
+    recents = [{ q, lat: p.lat, lng: p.lng, label: p.label || q }, ...recents.filter(r => r.q.toLowerCase() !== q.toLowerCase())].slice(0, 8);
+    LS.set("recents", recents);
+  }
+  function saveHomeWork(kind, p, name) { saved = [{ kind, name, lat: p.lat, lng: p.lng, label: p.label }, ...saved.filter(s => s.kind !== kind)]; LS.set("saved", saved); }
+  function addFavorite(name, p) { if (saved.some(s => s.kind === "star" && s.name === name)) return; saved = [...saved, { kind: "star", name, lat: p.lat, lng: p.lng, label: p.label || name }]; LS.set("saved", saved); }
+  function removeSaved(item) { saved = saved.filter(s => s !== item); LS.set("saved", saved); }
+
   // ---- polyline (precision 5) -> [[lat,lng], ...] ----
   function decodePolyline(str, precision = 5) {
     let i = 0, lat = 0, lng = 0; const out = [], f = Math.pow(10, precision);
@@ -280,30 +319,34 @@
   map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: true }), "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
 
-  let routeGeo = null;                 // current route GeoJSON (re-added after setStyle)
-  let isoGeo = null;                   // current isochrone FeatureCollection
+  let routeGeo = null, altsGeo = null, isoGeo = null;   // overlay state (re-added after setStyle)
   function paintRoute() {
     if (!map.getSource("route")) {
       map.addSource("route", { type: "geojson", data: routeGeo || { type: "FeatureCollection", features: [] } });
       map.addLayer({ id: "route-cap", type: "line", source: "route",
-        layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#ffffff", "line-width": 8 } });
+        layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#ffffff", "line-width": 8 } });
       map.addLayer({ id: "route-line", type: "line", source: "route",
-        layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#00b260", "line-width": 5 } });
+        layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#00b260", "line-width": 5 } });
     } else { map.getSource("route").setData(routeGeo || { type: "FeatureCollection", features: [] }); }
+  }
+  function paintAlts() {
+    const empty = { type: "FeatureCollection", features: [] };
+    if (!map.getSource("alts")) {
+      const before = map.getLayer("route-cap") ? "route-cap" : undefined;   // alternatives sit UNDER the active route
+      map.addSource("alts", { type: "geojson", data: altsGeo || empty });
+      map.addLayer({ id: "alts-line", type: "line", source: "alts", layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#94a3b8", "line-width": 5, "line-opacity": 0.75, "line-dasharray": [1.6, 1.2] } }, before);
+    } else { map.getSource("alts").setData(altsGeo || empty); }
   }
   function paintIso() {
     const empty = { type: "FeatureCollection", features: [] };
     if (!map.getSource("iso")) {
-      const before = map.getLayer("route-cap") ? "route-cap" : undefined;   // keep route drawn above the bands
+      const before = map.getLayer("alts-line") ? "alts-line" : (map.getLayer("route-cap") ? "route-cap" : undefined);
       map.addSource("iso", { type: "geojson", data: isoGeo || empty });
       map.addLayer({ id: "iso-fill", type: "fill", source: "iso", paint: {
-        "fill-color": ["interpolate", ["linear"], ["get", "contour"], 5, "#16a34a", 10, "#f59e0b", 15, "#dc2626"],
-        "fill-opacity": 0.16 } }, before);
+        "fill-color": ["interpolate", ["linear"], ["get", "contour"], 5, "#16a34a", 10, "#f59e0b", 15, "#dc2626"], "fill-opacity": 0.16 } }, before);
       map.addLayer({ id: "iso-line", type: "line", source: "iso", paint: {
-        "line-color": ["interpolate", ["linear"], ["get", "contour"], 5, "#16a34a", 10, "#f59e0b", 15, "#dc2626"],
-        "line-width": 1.5, "line-opacity": 0.7 } }, before);
+        "line-color": ["interpolate", ["linear"], ["get", "contour"], 5, "#16a34a", 10, "#f59e0b", 15, "#dc2626"], "line-width": 1.5, "line-opacity": 0.7 } }, before);
     } else { map.getSource("iso").setData(isoGeo || empty); }
   }
   // Terrain as a 3D modifier on the current base style via setTerrain (NOT a separate
@@ -314,21 +357,16 @@
       map.addSource("terrain", { type: "raster-dem", url: location.origin + "/tiles/terrain", tileSize: 256, encoding: "mapbox" });
     map.setTerrain({ source: "terrain", exaggeration: 1.3 });
   }
+  function paintOverlays() { paintRoute(); paintAlts(); paintIso(); applyTerrain(); }
   let restored = false;
-  function onMapReady() { paintRoute(); paintIso(); applyTerrain(); if (!restored) { restored = true; restoreState(); } }
-  map.on("load", onMapReady);
-  map.on("style.load", () => { paintRoute(); paintIso(); applyTerrain(); });   // re-add overlays after a theme switch
+  map.on("load", () => { paintOverlays(); if (!restored) { restored = true; restoreState(); } });
+  map.on("style.load", paintOverlays);   // re-add overlays after a theme switch
 
   function selectTheme(t) {
     document.querySelectorAll("#theme button").forEach(b => b.classList.toggle("on", b.dataset.theme === t));
-    if (t === "terrain") {                       // 3D ON the current light/dark base
-      terrainOn = true; applyTerrain(); map.easeTo({ pitch: 62, duration: 700 });
-    } else {                                     // plain base style + terrain off
-      terrainOn = false; baseTheme = t;
-      document.body.classList.toggle("dark", t === "dark");
-      map.easeTo({ pitch: 0, duration: 400 });
-      map.setStyle(location.origin + BASE[t]);
-    }
+    if (t === "terrain") { terrainOn = true; applyTerrain(); map.easeTo({ pitch: 62, duration: 700 }); }
+    else { terrainOn = false; baseTheme = t; document.body.classList.toggle("dark", t === "dark");
+      map.easeTo({ pitch: 0, duration: 400 }); map.setStyle(location.origin + BASE[t]); }
   }
   document.querySelectorAll("#theme button").forEach(b => b.onclick = () => selectTheme(b.dataset.theme));
   document.body.classList.toggle("dark", baseTheme === "dark");
@@ -341,8 +379,7 @@
       ? `<text x="15" y="18.5" text-anchor="middle" font-size="13">${content}</text>`
       : `<circle cx="15" cy="14" r="8.5" fill="#fff"/><text x="15" y="18" text-anchor="middle" font-size="12" font-weight="700" fill="${color}">${esc(content)}</text>`;
     el.innerHTML = `<svg width="30" height="40" viewBox="0 0 30 40" xmlns="http://www.w3.org/2000/svg">` +
-      `<path d="M15 1C7.8 1 2 6.8 2 14c0 9 13 25 13 25s13-16 13-25C28 6.8 22.2 1 15 1z" fill="${color}" stroke="#fff" stroke-width="2"/>` +
-      inner + `</svg>`;
+      `<path d="M15 1C7.8 1 2 6.8 2 14c0 9 13 25 13 25s13-16 13-25C28 6.8 22.2 1 15 1z" fill="${color}" stroke="#fff" stroke-width="2"/>` + inner + `</svg>`;
     return el;
   }
   let markers = [];
@@ -352,12 +389,33 @@
     if (label) m.setPopup(new maplibregl.Popup({ className: "ml-popup", offset: 34 }).setText(label));
     m.addTo(map); markers.push(m); return m;
   }
+  // a found-place marker whose popup offers Save (home / work / favorite)
+  function placeMarker(p) {
+    clearMarkers();
+    const m = new maplibregl.Marker({ element: pinEl("#00b260", "", false), anchor: "bottom" }).setLngLat([p.lng, p.lat]);
+    const pop = new maplibregl.Popup({ className: "ml-popup", offset: 34 }).setHTML(
+      `<div class="pp"><b>${esc(p.label || p.q || p.name || "Địa điểm")}</b><div class="ppacts">` +
+      `<button data-s="home">🏠 Nhà</button><button data-s="work">💼 Cơ quan</button><button data-s="star">⭐ Lưu</button></div></div>`);
+    m.setPopup(pop); m.addTo(map); markers.push(m);
+    pop.on("open", () => {
+      pop.getElement().querySelectorAll(".ppacts button").forEach(b => b.onclick = () => {
+        const s = b.dataset.s;
+        if (s === "star") { addFavorite(p.q || p.label || p.name, p); toast("Đã lưu yêu thích ⭐"); }
+        else { saveHomeWork(s, p, s === "home" ? "Nhà" : "Cơ quan"); toast(s === "home" ? "Đã đặt Nhà 🏠" : "Đã đặt Cơ quan 💼"); }
+      });
+    });
+    m.togglePopup(); return m;
+  }
+  function goPlace(p, instant) {
+    placeMarker(p);
+    lastSearch = { lat: p.lat, lng: p.lng, q: p.q || p.name || p.label, label: p.label || p.name || p.q };
+    map.flyTo({ center: [p.lng, p.lat], zoom: 16, duration: instant ? 0 : 1200 });
+  }
 
   // ---- autocomplete wiring (icons + keyboard nav; works for dynamic stop inputs) ----
   const TYPE_ICON = (types) => {
     const t = (types || []).join(" ");
-    if (/route|street/.test(t)) return "🛣️"; if (/locality|place|admin/.test(t)) return "🏙️";
-    return "📍";
+    if (/route|street/.test(t)) return "🛣️"; if (/locality|place|admin/.test(t)) return "🏙️"; return "📍";
   };
   function attachAutocomplete(inputId, acId, onPick) {
     const input = document.getElementById(inputId), ac = document.getElementById(acId);
@@ -373,18 +431,17 @@
           const k = (p.structured_formatting?.main_text || p.description) + "|" + (p.structured_formatting?.secondary_text || "");
           if (seen.has(k)) return false; seen.add(k); return true;
         });
-        if (!ps.length) { ac.innerHTML = '<div><small>Không tìm thấy</small></div>'; return ac.classList.add("open"); }
+        if (!ps.length) { ac.innerHTML = '<div data-name=""><small>Không tìm thấy</small></div>'; return ac.classList.add("open"); }
         ac.innerHTML = ps.slice(0, 6).map(p =>
           `<div data-name="${esc(p.structured_formatting?.main_text || p.description)}"><span class="ico">${TYPE_ICON(p.types)}</span><span>` +
           `<b>${esc(p.structured_formatting?.main_text || p.description)}</b>` +
-          (p.structured_formatting?.secondary_text ? `<small>${esc(p.structured_formatting.secondary_text)}</small>` : "") +
-          `</span></div>`).join("");
-        ac.querySelectorAll("div").forEach(el => el.onclick = () => { close(); onPick(el.dataset.name); });
+          (p.structured_formatting?.secondary_text ? `<small>${esc(p.structured_formatting.secondary_text)}</small>` : "") + `</span></div>`).join("");
+        ac.querySelectorAll("div[data-name]").forEach(el => { if (el.dataset.name) el.onclick = () => { close(); onPick(el.dataset.name); }; });
         ac.classList.add("open");
       } catch (e) { toast("Lỗi kết nối"); }
     }, 250));
     input.addEventListener("keydown", (e) => {
-      const items = [...ac.querySelectorAll("div[data-name]")];
+      const items = [...ac.querySelectorAll("div[data-name]")].filter(el => el.dataset.name);
       if (!ac.classList.contains("open") || !items.length) return;
       if (e.key === "ArrowDown") { e.preventDefault(); active = Math.min(active + 1, items.length - 1); }
       else if (e.key === "ArrowUp") { e.preventDefault(); active = Math.max(active - 1, 0); }
@@ -398,13 +455,47 @@
     return input;
   }
 
+  // ---- saved/recent "home screen" shown when an input is focused & empty ----
+  function attachHome(inputId, acId, onPlace) {
+    const input = document.getElementById(inputId), ac = document.getElementById(acId);
+    function render() {
+      const home = savedOf("home"), work = savedOf("work"), fav = saved.filter(s => s.kind === "star");
+      let h = "";
+      const hw = (kind, ico, title) => { const s = savedOf(kind);
+        return `<div class="sv" data-act="${kind}"><span class="ico">${ico}</span><span><b>${title}</b><small>${s ? esc(s.label || s.name) : "Chưa đặt — tìm một địa điểm rồi lưu"}</small></span></div>`; };
+      h += hw("home", "🏠", "Nhà") + hw("work", "💼", "Cơ quan");
+      if (fav.length) { h += `<div class="svh">Đã lưu</div>`;
+        fav.forEach((s, i) => h += `<div class="sv" data-act="fav" data-i="${i}"><span class="ico">⭐</span><span><b>${esc(s.name)}</b><small>${esc(s.label || "")}</small></span><span class="svx" data-rm="${i}" title="Xóa">✕</span></div>`); }
+      if (recents.length) { h += `<div class="svh">Gần đây</div>`;
+        recents.forEach((r, i) => h += `<div class="sv" data-act="rec" data-i="${i}"><span class="ico">🕘</span><span><b>${esc(r.q)}</b><small>${esc(r.label || "")}</small></span><span class="svx" data-star="${i}" title="Lưu">☆</span></div>`); }
+      if (!h) return false;
+      ac.innerHTML = h; ac.classList.add("open");
+      const fav2 = saved.filter(s => s.kind === "star");
+      ac.querySelectorAll(".sv").forEach(el => el.onclick = (ev) => {
+        if (ev.target.dataset.rm != null) { ev.stopPropagation(); removeSaved(fav2[+ev.target.dataset.rm]); render(); return; }
+        if (ev.target.dataset.star != null) { ev.stopPropagation(); const r = recents[+ev.target.dataset.star]; addFavorite(r.q, r); toast("Đã lưu yêu thích ⭐"); render(); return; }
+        const act = el.dataset.act;
+        if (act === "home" || act === "work") {
+          const cur = savedOf(act);
+          if (cur) { ac.classList.remove("open"); onPlace(cur); }
+          else if (lastSearch) { saveHomeWork(act, lastSearch, act === "home" ? "Nhà" : "Cơ quan"); toast(act === "home" ? "Đã đặt Nhà 🏠" : "Đã đặt Cơ quan 💼"); render(); }
+          else toast("Hãy tìm một địa điểm trước rồi lưu");
+        } else if (act === "fav") { ac.classList.remove("open"); onPlace(fav2[+el.dataset.i]); }
+        else if (act === "rec") { ac.classList.remove("open"); onPlace(recents[+el.dataset.i]); }
+      });
+      return true;
+    }
+    input.addEventListener("focus", () => { if (!input.value.trim()) render(); });
+    return render;
+  }
+
   async function geocode(name) {
     const d = await api("/maps/api/geocode/json", { address: name });
     const g = d.results && d.results[0];
     return g ? { lng: g.geometry.location.lng, lat: g.geometry.location.lat, label: g.formatted_address || g.name } : null;
   }
 
-  // ---- search box ----
+  // ---- search box (autocomplete + saved/recent home screen + save popup) ----
   let lastSearch = null;
   const qInput = document.getElementById("q"), qClear = document.getElementById("q-clear");
   qInput.addEventListener("input", () => qClear.classList.toggle("show", !!qInput.value));
@@ -414,18 +505,16 @@
     try {
       const p = await geocode(name);
       if (!p) return toast("Không tìm thấy");
-      clearMarkers(); marker(p.lng, p.lat, "#00b260", p.label, "");
-      lastSearch = { lat: p.lat, lng: p.lng, q: name };
-      map.flyTo({ center: [p.lng, p.lat], zoom: 16 });
-      markers[0].togglePopup();
+      p.q = name; pushRecent(name, p); goPlace(p);
     } catch (e) { toast("Lỗi kết nối"); }
   });
+  attachHome("q", "ac-q", (p) => { qInput.value = p.q || p.name || p.label || ""; qClear.classList.toggle("show", !!qInput.value); goPlace(p); });
 
   // ---- directions (origin + intermediate stops + destination) ----
   let mode = "two_wheeler", A = null, B = null, optimize = false;
-  let stops = [], stopSeq = 0;          // each: {id, lng, lat, label, row}
+  let stops = [], stopSeq = 0, dragSt = null;   // each stop: {id, lng, lat, label, row}
   const dir = document.getElementById("dir"), result = document.getElementById("result"), stopsBox = document.getElementById("stops");
-  const dirToggle = document.getElementById("dir-toggle");
+  const dirToggle = document.getElementById("dir-toggle"), altsBox = document.getElementById("alts");
   function openDir() { dir.classList.add("open"); dirToggle.classList.add("on"); }
   dirToggle.onclick = () => { const open = dir.classList.toggle("open"); dirToggle.classList.toggle("on", open); };
 
@@ -441,6 +530,8 @@
     document.getElementById("to").value = name; const p = await geocode(name).catch(() => null);
     if (p) { B = p; placePts(); } else toast("Không tìm thấy");
   });
+  attachHome("from", "ac-from", (p) => { A = { lng: p.lng, lat: p.lat, label: p.label || p.name || p.q }; document.getElementById("from").value = p.name || p.q || p.label || ""; placePts(); });
+  attachHome("to", "ac-to", (p) => { B = { lng: p.lng, lat: p.lat, label: p.label || p.name || p.q }; document.getElementById("to").value = p.name || p.q || p.label || ""; placePts(); });
 
   // my location -> origin
   document.getElementById("my-loc").onclick = () => {
@@ -452,24 +543,34 @@
       openDir(); placePts(); map.flyTo({ center: [lng, lat], zoom: 15 });
     }, () => toast("Không lấy được vị trí"), { enableHighAccuracy: true, timeout: 8000 });
   };
-  // swap A <-> B
   document.getElementById("swap").onclick = () => {
     [A, B] = [B, A];
-    const f = document.getElementById("from"), t = document.getElementById("to"); [f.value, t.value] = [t.value, f.value];
-    placePts();
+    const f = document.getElementById("from"), t = document.getElementById("to"); [f.value, t.value] = [t.value, f.value]; placePts();
   };
-  // clear everything in the directions panel
   document.getElementById("clear-dir").onclick = () => {
     A = B = null; stops.forEach(s => s.row.remove()); stops = [];
     document.getElementById("from").value = ""; document.getElementById("to").value = "";
-    routeGeo = null; paintRoute(); result.classList.remove("open"); clearMarkers();
+    routeGeo = altsGeo = null; paintRoute(); paintAlts(); result.classList.remove("open"); clearMarkers();
   };
+
+  // drag-to-reorder stops
+  function reorderStops() { const order = [...stopsBox.querySelectorAll(".stop")]; stops.sort((a, b) => order.indexOf(a.row) - order.indexOf(b.row)); placePts(); }
+  function wireDrag(row, st) {
+    const h = row.querySelector(".draghandle");
+    h.addEventListener("dragstart", (e) => { dragSt = st; row.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", ""); } catch (x) {} });
+    h.addEventListener("dragend", () => { row.classList.remove("dragging"); dragSt = null; reorderStops(); });
+    row.addEventListener("dragover", (e) => {
+      e.preventDefault(); if (!dragSt || dragSt.row === row) return;
+      const after = e.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2;
+      stopsBox.insertBefore(dragSt.row, after ? row.nextSibling : row);
+    });
+  }
 
   function addStop(point) {
     const id = "stop" + (++stopSeq);
-    const row = document.createElement("div"); row.className = "row stop";
-    row.style.cssText = "padding-top:0;padding-bottom:4px";
+    const row = document.createElement("div"); row.className = "row stop"; row.style.cssText = "padding-top:0;padding-bottom:4px";
     row.innerHTML =
+      `<span class="draghandle" title="Kéo để sắp xếp" draggable="true">⠿</span>` +
       `<div class="field"><span class="pin" style="color:#d97706">◇</span>` +
       `<input id="${id}" placeholder="Điểm dừng (gõ hoặc bấm bản đồ)" autocomplete="off" />` +
       `<div class="ac" id="ac-${id}"></div></div>` +
@@ -482,6 +583,7 @@
       if (p) { st.lng = p.lng; st.lat = p.lat; st.label = p.label; placePts(); } else toast("Không tìm thấy");
     });
     row.querySelector(".rm").onclick = () => { row.remove(); stops = stops.filter(x => x !== st); placePts(); };
+    wireDrag(row, st);
     if (point) {
       st.lng = point.lng; st.lat = point.lat; st.label = point.label || "Điểm dừng";
       document.getElementById(id).value = point.lat.toFixed(5) + "," + point.lng.toFixed(5);
@@ -504,46 +606,59 @@
     "straight": "↑", "merge": "⇢", "ramp-left": "↖", "ramp-right": "↗", "fork-left": "↖", "fork-right": "↗",
     "roundabout-left": "↻", "roundabout-right": "↻", "ferry": "⛴", "depart": "🅐", "arrive": "🏁",
   };
+  const lineOf = (route) => decodePolyline(route.overview_polyline.points).map(([la, ln]) => [ln, la]);
+  let allRoutes = [], activeRoute = 0;
+
+  function showRoutes(idx) {
+    activeRoute = idx;
+    const route = allRoutes[idx], legs = route.legs, pts = lineOf(route);
+    routeGeo = { type: "Feature", geometry: { type: "LineString", coordinates: pts } };
+    altsGeo = { type: "FeatureCollection", features: allRoutes.map((r, i) => i === idx ? null : ({ type: "Feature", geometry: { type: "LineString", coordinates: lineOf(r) } })).filter(Boolean) };
+    paintAlts(); paintRoute();
+    const lons = pts.map(p => p[0]), lats = pts.map(p => p[1]), small = window.innerWidth < 560;
+    map.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]],
+      { padding: small ? { top: 130, bottom: 50, left: 40, right: 40 } : { top: 60, bottom: 60, left: 390, right: 60 }, duration: 700 });
+    const totM = legs.reduce((a, l) => a + l.distance.value, 0), totS = legs.reduce((a, l) => a + l.duration.value, 0);
+    const vias = stops.filter(s => s.lat != null);
+    document.querySelector(".summ").classList.remove("list");
+    document.getElementById("r-eta").textContent = fmtMin(totS);
+    document.getElementById("r-km").textContent = fmtKm(totM) + (vias.length && optimize ? " · đã tối ưu" : "");
+    if (allRoutes.length > 1) {
+      altsBox.innerHTML = allRoutes.map((r, i) => `<button class="altchip${i === idx ? " on" : ""}" data-i="${i}">Tuyến ${i + 1} · ${fmtMin(r.legs.reduce((a, l) => a + l.duration.value, 0))}</button>`).join("");
+      altsBox.querySelectorAll(".altchip").forEach(b => b.onclick = () => showRoutes(+b.dataset.i));
+      altsBox.style.display = "flex";
+    } else altsBox.style.display = "none";
+    let html = "";
+    legs.forEach((leg, li) => {
+      if (legs.length > 1) html += `<li class="leghdr"><span class="n">${li + 1}</span><span>Chặng ${li + 1} · ${leg.distance.text} · ${leg.duration.text}</span></li>`;
+      leg.steps.forEach(s => {
+        const a = s.start_location || {};
+        html += `<li class="pick" data-lat="${a.lat}" data-lng="${a.lng}"><span class="n mvi">${MVI[s.maneuver] || "•"}</span>` +
+          `<span><span>${esc(s.html_instructions || "")}</span><span class="d"> · ${s.distance.text}</span></span></li>`;
+      });
+    });
+    const steps = document.getElementById("r-steps"); steps.innerHTML = html;
+    steps.querySelectorAll("li.pick").forEach(li => li.onclick = () => {
+      const la = +li.dataset.lat, ln = +li.dataset.lng;
+      if (Number.isFinite(la) && Number.isFinite(ln)) map.flyTo({ center: [ln, la], zoom: 17, duration: 600 });
+    });
+    result.classList.add("open");
+  }
 
   document.getElementById("route-btn").onclick = (e) => withBusy(e.currentTarget, "Đang tìm…", async () => {
     if (!A || !B) return toast("Chọn điểm đi và điểm đến");
     const vias = stops.filter(s => s.lat != null);
     const params = { origin: `${A.lat},${A.lng}`, destination: `${B.lat},${B.lng}`, mode };
     if (vias.length) params.waypoints = (optimize ? "optimize:true|" : "") + vias.map(s => `${s.lat},${s.lng}`).join("|");
+    else params.alternatives = "true";   // offer alternative routes for a simple A→B
     try {
       const d = await api("/maps/api/directions/json", params);
       if (d.status !== "OK" || !d.routes?.length) return toast("Không tìm được đường");
-      const route = d.routes[0], legs = route.legs;
-      const pts = decodePolyline(route.overview_polyline.points).map(([la, ln]) => [ln, la]);
-      routeGeo = { type: "Feature", geometry: { type: "LineString", coordinates: pts } };
-      paintRoute();
-      const lons = pts.map(p => p[0]), lats = pts.map(p => p[1]);
-      const small = window.innerWidth < 560;
-      map.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]],
-        { padding: small ? { top: 130, bottom: 50, left: 40, right: 40 } : { top: 60, bottom: 60, left: 390, right: 60 }, duration: 700 });
-      const totM = legs.reduce((a, l) => a + l.distance.value, 0), totS = legs.reduce((a, l) => a + l.duration.value, 0);
-      document.querySelector(".summ").classList.remove("list");
-      document.getElementById("r-eta").textContent = fmtMin(totS);
-      document.getElementById("r-km").textContent = fmtKm(totM) + (vias.length && optimize ? " · đã tối ưu" : "");
-      let html = "";
-      legs.forEach((leg, li) => {
-        if (legs.length > 1) html += `<li class="leghdr"><span class="n">${li + 1}</span><span>Chặng ${li + 1} · ${leg.distance.text} · ${leg.duration.text}</span></li>`;
-        leg.steps.forEach(s => {
-          const a = s.start_location || {};
-          html += `<li class="pick" data-lat="${a.lat}" data-lng="${a.lng}"><span class="n mvi">${MVI[s.maneuver] || "•"}</span>` +
-            `<span><span>${esc(s.html_instructions || "")}</span><span class="d"> · ${s.distance.text}</span></span></li>`;
-        });
-      });
-      const steps = document.getElementById("r-steps"); steps.innerHTML = html;
-      steps.querySelectorAll("li.pick").forEach(li => li.onclick = () => {
-        const la = +li.dataset.lat, ln = +li.dataset.lng;
-        if (Number.isFinite(la) && Number.isFinite(ln)) map.flyTo({ center: [ln, la], zoom: 17, duration: 600 });
-      });
-      result.classList.add("open");
+      allRoutes = d.routes; showRoutes(0);
     } catch (e) { toast("Lỗi kết nối"); }
   });
   document.getElementById("r-close").onclick = () => {
-    result.classList.remove("open"); routeGeo = null; paintRoute();
+    result.classList.remove("open"); routeGeo = altsGeo = null; allRoutes = []; paintRoute(); paintAlts();
   };
 
   // ---- nearby (category chips around the current map center) ----
@@ -555,9 +670,7 @@
   ];
   const catsBox = document.getElementById("cats");
   catsBox.innerHTML = CATS.map(c => `<span class="chip" data-t="${c.t}" data-n="${c.n}" data-e="${c.e}">${c.e} ${c.n}</span>`).join("");
-  document.getElementById("t-near").onclick = (e) => {
-    const open = catsBox.classList.toggle("open"); e.currentTarget.classList.toggle("on", open);
-  };
+  document.getElementById("t-near").onclick = (e) => { const open = catsBox.classList.toggle("open"); e.currentTarget.classList.toggle("on", open); };
   catsBox.querySelectorAll(".chip").forEach(ch => ch.onclick = () => runNearby(ch.dataset.t, ch.dataset.n, ch.dataset.e));
   async function runNearby(type, label, emoji) {
     const c = map.getCenter();
@@ -572,7 +685,7 @@
     } catch (e) { toast("Lỗi kết nối"); }
   }
   function showList(title, items) {
-    routeGeo = null; paintRoute();
+    routeGeo = altsGeo = null; paintRoute(); paintAlts(); altsBox.style.display = "none";
     document.querySelector(".summ").classList.add("list");
     document.getElementById("r-eta").textContent = title;
     document.getElementById("r-km").textContent = items.length + " kết quả";
@@ -580,7 +693,7 @@
       `<li class="pick" data-i="${i}"><span class="n">${i + 1}</span><span><span>${esc(r.name)}</span>` +
       `<span class="d"> · ${esc(r.vicinity || "")}${r.distance_m ? " · " + Math.round(r.distance_m) + "m" : ""}</span></span></li>`).join("");
     document.querySelectorAll("#r-steps li.pick").forEach(li => li.onclick = () => {
-      const r = items[+li.dataset.i], i = +li.dataset.i;
+      const i = +li.dataset.i, r = items[i];
       map.flyTo({ center: [r.geometry.location.lng, r.geometry.location.lat], zoom: 17 });
       if (markers[i]) markers[i].togglePopup();
     });
@@ -601,7 +714,7 @@
     try {
       const d = await api("/v1/isochrone", { location: `${lat},${lng}`, contours: "5,10,15", mode });
       if (!d || !d.features || !d.features.length) return toast("Không tính được vùng");
-      d.features.sort((a, b) => (b.properties.contour || 0) - (a.properties.contour || 0));  // big first -> concentric
+      d.features.sort((a, b) => (b.properties.contour || 0) - (a.properties.contour || 0));
       isoGeo = d; paintIso();
       clearMarkers(); marker(lng, lat, "#0ea5e9", "Điểm xuất phát · 5/10/15 phút " + modeLabel(), "⏱️", true);
       toast("Vùng tới được: 5 / 10 / 15 phút");
@@ -618,10 +731,7 @@
     } else if (lastSearch) {
       u.searchParams.set("ll", `${lastSearch.lat.toFixed(5)},${lastSearch.lng.toFixed(5)}`);
       if (lastSearch.q) u.searchParams.set("q", lastSearch.q);
-    } else {
-      const c = map.getCenter();
-      u.searchParams.set("ll", `${c.lat.toFixed(5)},${c.lng.toFixed(5)}`); u.searchParams.set("z", Math.round(map.getZoom()));
-    }
+    } else { const c = map.getCenter(); u.searchParams.set("ll", `${c.lat.toFixed(5)},${c.lng.toFixed(5)}`); u.searchParams.set("z", Math.round(map.getZoom())); }
     const link = u.toString();
     try { await navigator.clipboard.writeText(link); toast("Đã copy link chia sẻ"); }
     catch (e) { prompt("Link chia sẻ:", link); }
@@ -639,17 +749,13 @@
         raw.slice(1, -1).forEach(a => addStop({ lng: a[1], lat: a[0] }));
         if (p.get("mode")) setMode(p.get("mode"));
         if (p.get("opt") === "1") { optimize = true; document.getElementById("opt-chk").checked = true; }
-        placePts();
-        setTimeout(() => document.getElementById("route-btn").click(), 500);
+        placePts(); setTimeout(() => document.getElementById("route-btn").click(), 500);
       }
     } else if (p.get("ll")) {
       const [la, ln] = p.get("ll").split(",").map(Number);
       if (Number.isFinite(la) && Number.isFinite(ln)) {
-        clearMarkers(); marker(ln, la, "#00b260", p.get("q") || "Vị trí", "");
-        lastSearch = { lat: la, lng: ln, q: p.get("q") || "" };
-        map.flyTo({ center: [ln, la], zoom: p.get("z") ? +p.get("z") : 16, duration: 0 });
+        goPlace({ lat: la, lng: ln, q: p.get("q") || "", label: p.get("q") || "Vị trí" }, true);
         if (p.get("q")) { qInput.value = p.get("q"); qClear.classList.add("show"); }
-        markers[0].togglePopup();
       }
     }
   }
@@ -661,7 +767,7 @@
     if (dir.classList.contains("open")) {
       if (!A) { A = { lng, lat, label: "Điểm đi" }; document.getElementById("from").value = `${lat.toFixed(5)},${lng.toFixed(5)}`; }
       else if (!B) { B = { lng, lat, label: "Điểm đến" }; document.getElementById("to").value = `${lat.toFixed(5)},${lng.toFixed(5)}`; }
-      else { addStop({ lng, lat }); }   // A & B set -> extra clicks add intermediate stops
+      else { addStop({ lng, lat }); }
       placePts(); return;
     }
     try {
