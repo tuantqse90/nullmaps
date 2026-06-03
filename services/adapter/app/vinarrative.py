@@ -43,12 +43,16 @@ def vi_instruction(m: dict) -> str:
         return f"Rẽ nhẹ sang trái{onto}"
     if t == 17:                       # ramp straight
         return "Đi thẳng theo đường nhánh"
-    if t in (18, 20):                 # ramp / exit right
-        return "Đi theo đường nhánh bên phải"
-    if t in (19, 21):                 # ramp / exit left
-        return "Đi theo đường nhánh bên trái"
-    if t == 22:                       # stay straight
-        return f"Đi thẳng{onto}"
+    if t == 18:                       # ramp right
+        return f"Đi theo đường nhánh bên phải{onto}"
+    if t == 19:                       # ramp left
+        return f"Đi theo đường nhánh bên trái{onto}"
+    if t == 20:                       # exit right (leave a highway via an exit)
+        return f"Đi ra lối ra bên phải{onto}"
+    if t == 21:                       # exit left
+        return f"Đi ra lối ra bên trái{onto}"
+    if t == 22:                       # stay straight (continue along, not onto a new road)
+        return f"Đi thẳng{on}"
     if t == 23:                       # keep right
         return f"Giữ làn bên phải{onto}"
     if t == 24:                       # keep left
@@ -65,4 +69,8 @@ def vi_instruction(m: dict) -> str:
         return f"Lên phà{on}"
     if t == 29:                       # ferry exit
         return f"Xuống phà{on}"
+    if t == 37:                       # merge right
+        return f"Nhập vào làn bên phải{onto}"
+    if t == 38:                       # merge left
+        return f"Nhập vào làn bên trái{onto}"
     return m.get("instruction", "")   # fallback: Valhalla's English

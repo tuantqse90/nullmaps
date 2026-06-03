@@ -158,10 +158,15 @@ def avoid_locations(request: Request) -> list:
 
 def avoid_zones(request: Request) -> list:
     """?avoid_zones=<GeoJSON Polygon|MultiPolygon> -> Valhalla exclude_polygons
-    (a list of rings, each a list of [lon, lat]). Fail-open on malformed input;
-    reject oversize to respect valhalla.json max_exclude_polygons_length=10000."""
+    (a list of rings, each a list of [lon, lat]). Fail-open on malformed input.
+
+    Cap on the TOTAL VERTEX COUNT (what valhalla.json max_exclude_polygons_length
+    actually limits), not on the raw string length — a small high-precision polygon
+    can exceed a char cap while being well within Valhalla's point budget, and a
+    char cap would silently drop the zone (route runs straight through it). A loose
+    1 MB raw guard still prevents parsing pathological input."""
     raw = request.query_params.get("avoid_zones")
-    if not raw or len(raw) > 10000:
+    if not raw or len(raw) > 1_000_000:
         return []
     try:
         geo = json.loads(raw)
@@ -171,6 +176,8 @@ def avoid_zones(request: Request) -> list:
         elif t == "MultiPolygon":
             rings = [poly[0] for poly in geo["coordinates"]]
         else:
+            return []
+        if sum(len(ring) for ring in rings) > 10000:   # Valhalla max_exclude_polygons_length
             return []
         return [[[float(pt[0]), float(pt[1])] for pt in ring] for ring in rings]
     except (ValueError, KeyError, TypeError, IndexError):
@@ -191,15 +198,17 @@ def with_radius(locs: list, radius: int) -> list:
     return [{**loc, "radius": radius} for loc in locs]
 
 
-def with_road_snap(locs: list, radius: int = 200,
+def with_road_snap(locs: list, radius: int = 700,
                    min_road_class: str = "residential") -> list:
     """Snap copy that also excludes service/track edges via `search_filter`.
 
-    A point can snap to a disconnected service-road island that has no path to the
-    rest of the network — classically an airport/airfield centroid (taxiway service
-    roads) or a gated complex. Excluding `service`/`track` forces the snap onto the
-    nearest connected public road, so routing succeeds. Used only as a last-resort
-    retry after the normal (nearest-edge) attempts return "No path".
+    A point can snap to an edge with no path to the rest of the network: a
+    disconnected service-road island (airport airfield centroid / gated complex),
+    or it can sit deep inside a large named polygon (lake, park, campus) whose
+    geocoded centroid is far from any road. Excluding `service`/`track` AND using a
+    generous search radius forces the snap onto the nearest connected public road,
+    so routing succeeds. Used only as a last-resort retry after the normal
+    (nearest-edge) attempts return "No path".
     """
     return [{**loc, "radius": radius,
              "search_filter": {"min_road_class": min_road_class}} for loc in locs]
@@ -258,12 +267,19 @@ def metrics(request: Request):
 
 
 def parse_latlng(s: str) -> dict:
-    """'10.77,106.70' -> {'lat':10.77,'lon':106.70}. Raises on bad input."""
+    """'10.77,106.70' -> {'lat':10.77,'lon':106.70}. Raises 400 on bad input.
+
+    Rejects non-finite (nan/inf, incl. overflow literals like '1e500') and
+    out-of-range values so they never reach Valhalla as non-JSON NaN/Infinity
+    (which would 500/502 instead of a clean 400)."""
     try:
         lat, lon = (float(x) for x in s.split(",", 1))
-        return {"lat": lat, "lon": lon}
     except (ValueError, AttributeError):
         raise HTTPException(status_code=400, detail=f"bad lat,lng: {s!r}")
+    if not (math.isfinite(lat) and math.isfinite(lon)) or \
+            not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+        raise HTTPException(status_code=400, detail=f"lat,lng out of range: {s!r}")
+    return {"lat": lat, "lon": lon}
 
 
 def costing_for(request: Request) -> str:
@@ -407,11 +423,19 @@ async def directions(request: Request):
     def build_route(t: dict) -> dict:
         visit = t.get("locations", locs)
         legs, coords = [], []
+        def snap_m(pt):
+            """How far Valhalla moved a visited location from the requested coord."""
+            oi = pt.get("original_index")
+            if oi is None or not (0 <= oi < len(locs)):
+                return None
+            d = haversine_m(pt["lat"], pt.get("lon", pt.get("lng")), locs[oi]["lat"], locs[oi]["lon"])
+            return round(d, 1) if d > 25 else None
+
         for i, leg in enumerate(t["legs"]):
             summ = leg["summary"]
             meters, secs = summ["length"] * 1000, summ["time"]
             leg_coords = decode(leg["shape"], precision=6)
-            coords.extend(leg_coords)
+            coords.extend(leg_coords if i == 0 else leg_coords[1:])   # drop the shared boundary vertex
             a, b = visit[i], visit[i + 1]
             leg_entry = {
                 "distance": {"text": dist_text(meters), "value": round(meters)},
@@ -420,12 +444,14 @@ async def directions(request: Request):
                 "end_location": {"lat": b["lat"], "lng": b.get("lon", b.get("lng"))},
                 "steps": build_steps(leg, leg_coords, vi),
             }
-            oi = a.get("original_index")
-            if oi is not None and 0 <= oi < len(locs):
-                req = locs[oi]
-                snapped = haversine_m(a["lat"], a.get("lon", a.get("lng")), req["lat"], req["lon"])
-                if snapped > 25:
-                    leg_entry["snapped_distance_m"] = round(snapped, 1)
+            sm = snap_m(a)
+            if sm is not None:
+                leg_entry["snapped_distance_m"] = sm
+            # the loop only checks each leg's START; flag the final destination too
+            if i == len(t["legs"]) - 1:
+                dm = snap_m(b)
+                if dm is not None:
+                    leg_entry["snapped_distance_destination_m"] = dm
             legs.append(leg_entry)
         r = {"summary": "", "legs": legs, "overview_polyline": {"points": encode(coords, precision=5)}}
         if optimize:
@@ -479,6 +505,13 @@ async def distance_matrix(request: Request):
         payload["exclude_polygons"] = zones
     data = await valhalla("/sources_to_targets", payload)
     matrix = data.get("sources_to_targets")
+    if matrix is None:                       # whole-matrix failure (e.g. a source/target
+        for snap in (with_radius, with_road_snap):   # snapped to a disconnected island) —
+            payload["sources"] = snap(sources, 200) if snap is with_radius else snap(sources)
+            payload["targets"] = snap(targets, 200) if snap is with_radius else snap(targets)
+            matrix = (await valhalla("/sources_to_targets", payload)).get("sources_to_targets")
+            if matrix is not None:           # escalate snap like Directions does
+                break
     if matrix is not None and rad < 200 and any(
             c.get("distance") is None for row in matrix for c in row):
         payload["sources"] = with_radius(sources, 200)
@@ -730,7 +763,13 @@ async def isochrone(request: Request):
     loc = request.query_params.get("location")
     if not loc:
         return JSONResponse({"status": "INVALID_REQUEST"}, status_code=400)
-    mins = [float(m) for m in (request.query_params.get("contours") or "15").split(",") if m]
+    try:
+        mins = [float(m) for m in (request.query_params.get("contours") or "15").split(",") if m]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="bad contours (must be comma-separated minutes)")
+    if not mins or any(m <= 0 for m in mins):
+        raise HTTPException(status_code=400, detail="contours must be positive minutes")
+    mins = mins[:4]   # valhalla.json max_contours
     data = await valhalla("/isochrone", {
         "locations": [parse_latlng(loc)],
         "costing": costing_for(request),

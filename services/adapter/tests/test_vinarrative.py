@@ -34,3 +34,20 @@ def test_unknown_type_falls_back_to_english():
 def test_first_street_name_used_not_duplicate():
     # Valhalla often repeats "X" and "Đường X"; we take the first.
     assert vi_instruction({"type": 15, "street_names": ["Lê Lợi", "Đường Lê Lợi"]}) == "Rẽ trái vào Lê Lợi"
+
+
+def test_exit_distinct_from_ramp():
+    # kExitRight/Left (20/21) say "lối ra"; kRampRight/Left (18/19) stay "đường nhánh"
+    assert vi_instruction({"type": 20, "street_names": ["QL1A"]}) == "Đi ra lối ra bên phải vào QL1A"
+    assert vi_instruction({"type": 21}) == "Đi ra lối ra bên trái"
+    assert vi_instruction({"type": 18}) == "Đi theo đường nhánh bên phải"
+
+
+def test_stay_straight_uses_continue_preposition():
+    # kStayStraight (22) continues ALONG a road -> "trên", not the turn-onto "vào"
+    assert vi_instruction({"type": 22, "street_names": ["Võ Văn Kiệt"]}) == "Đi thẳng trên Võ Văn Kiệt"
+
+
+def test_merge_left_right_covered():
+    assert vi_instruction({"type": 37, "street_names": ["CT01"]}) == "Nhập vào làn bên phải vào CT01"
+    assert vi_instruction({"type": 38}) == "Nhập vào làn bên trái"
