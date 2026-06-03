@@ -46,9 +46,14 @@ def build_trigrams(con: sqlite3.Connection) -> None:
 
 
 def merge_streets(con: sqlite3.Connection) -> None:
-    """Collapse same-name street segments within an admin area to one representative
-    row (averaged location, max importance). A long street split across many OSM ways
-    stops producing many near-duplicate hits."""
+    """Collapse same-name street segments that are geographically close into one
+    representative row (averaged location, max importance). A long street split across
+    many OSM ways stops producing near-duplicate hits — but same-named streets in
+    DIFFERENT places stay SEPARATE.
+
+    The ~0.1° (~11 km) grid key is essential: district/city are unpopulated, so without
+    it every same-name street nationwide (e.g. a "Nguyễn Duy Trinh" in HCMC and another
+    in Bình Phước) would merge into a single row at their meaningless average centroid."""
     con.executescript("""
         DROP TABLE IF EXISTS _street_rep;
         CREATE TEMP TABLE _street_rep AS
@@ -56,7 +61,8 @@ def merge_streets(con: sqlite3.Connection) -> None:
                  COALESCE(NULLIF(district, ''), city, '') AS area,
                  AVG(lat) AS alat, AVG(lon) AS alon, MAX(importance) AS imp
           FROM features WHERE kind='street'
-          GROUP BY folded, COALESCE(NULLIF(district, ''), city, '');
+          GROUP BY folded, COALESCE(NULLIF(district, ''), city, ''),
+                   CAST(lat / 0.1 AS INT), CAST(lon / 0.1 AS INT);
         UPDATE features SET
           lat = (SELECT alat FROM _street_rep WHERE keep_id = features.id),
           lon = (SELECT alon FROM _street_rep WHERE keep_id = features.id),

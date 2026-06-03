@@ -318,6 +318,9 @@
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
   map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: true }), "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+  // bias geocode/autocomplete toward what the user is looking at (so "Nguyễn Duy Trinh"
+  // resolves to the nearby one, not a same-named street in another province)
+  const mapBias = () => { const c = map.getCenter(); return `${c.lat.toFixed(5)},${c.lng.toFixed(5)}`; };
 
   let routeGeo = null, altsGeo = null, isoGeo = null;   // overlay state (re-added after setStyle)
   function paintRoute() {
@@ -425,7 +428,7 @@
       const v = input.value.trim(); active = -1;
       if (v.length < 2) return close();
       try {
-        const d = await api("/maps/api/place/autocomplete/json", { input: v });
+        const d = await api("/maps/api/place/autocomplete/json", { input: v, location: mapBias() });
         const seen = new Set();
         const ps = (d.predictions || []).filter(p => {
           const k = (p.structured_formatting?.main_text || p.description) + "|" + (p.structured_formatting?.secondary_text || "");
@@ -490,7 +493,7 @@
   }
 
   async function geocode(name) {
-    const d = await api("/maps/api/geocode/json", { address: name });
+    const d = await api("/maps/api/geocode/json", { address: name, location: mapBias() });
     const g = d.results && d.results[0];
     return g ? { lng: g.geometry.location.lng, lat: g.geometry.location.lat, label: g.formatted_address || g.name } : null;
   }

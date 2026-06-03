@@ -50,19 +50,22 @@ def test_build_trigrams_populates_distinct_folded():
     assert con.execute("SELECT count(*) FROM trgm WHERE g='ngu'").fetchone()[0] == 1
 
 
-def test_merge_streets_collapses_same_name_within_area():
+def test_merge_streets_collapses_close_keeps_distant_separate():
+    # Merge is by name + ~0.1° (~11 km) grid: nearby same-name segments collapse, but a
+    # same-named street in another province stays SEPARATE (the Nguyễn-Duy-Trinh bug).
     con = _seed([
-        {"name": "Lê Lợi", "folded": "le loi", "kind": "street", "lat": 10.0, "lon": 106.0, "district": "Quan 1", "importance": 10},
-        {"name": "Lê Lợi", "folded": "le loi", "kind": "street", "lat": 10.2, "lon": 106.2, "district": "Quan 1", "importance": 12},
-        {"name": "Lê Lợi", "folded": "le loi", "kind": "street", "lat": 11.0, "lon": 107.0, "district": "Quan 3", "importance": 8},
+        {"name": "Lê Lợi", "folded": "le loi", "kind": "street", "lat": 10.00, "lon": 106.00, "importance": 10},
+        {"name": "Lê Lợi", "folded": "le loi", "kind": "street", "lat": 10.04, "lon": 106.03, "importance": 12},
+        {"name": "Lê Lợi", "folded": "le loi", "kind": "street", "lat": 11.50, "lon": 107.20, "importance": 8},  # far away
         {"name": "Chợ Bến Thành", "folded": "cho ben thanh", "kind": "poi", "lat": 10.0, "lon": 106.0},
     ])
     merge_streets(con)
-    streets = con.execute("SELECT folded, district, lat, lon, importance FROM features WHERE kind='street' ORDER BY district").fetchall()
-    assert len(streets) == 2                              # one per (folded, district)
-    q1 = [s for s in streets if s["district"] == "Quan 1"][0]
-    assert abs(q1["lat"] - 10.1) < 1e-9                   # averaged 10.0 & 10.2
-    assert q1["importance"] == 12                         # max
+    streets = con.execute("SELECT lat, lon, importance FROM features WHERE kind='street' ORDER BY lat").fetchall()
+    assert len(streets) == 2                              # close pair merged; distant one kept
+    near = streets[0]
+    assert abs(near["lat"] - 10.02) < 1e-9                # averaged 10.00 & 10.04
+    assert near["importance"] == 12                       # max within the cluster
+    assert any(abs(s["lat"] - 11.50) < 1e-9 for s in streets)  # distant same-name street survives
     assert con.execute("SELECT count(*) FROM features WHERE kind='poi'").fetchone()[0] == 1  # poi untouched
 
 
@@ -74,8 +77,8 @@ def test_merge_streets_safe_before_virtual_tables():
     contains no phantom entries (rows deleted by merge must never appear in the index).
     """
     con = _seed([
-        {"name": "Lê Lợi", "folded": "le loi", "kind": "street", "lat": 10.0, "lon": 106.0, "district": "Quan 1", "importance": 10},
-        {"name": "Lê Lợi", "folded": "le loi", "kind": "street", "lat": 10.2, "lon": 106.2, "district": "Quan 1", "importance": 12},
+        {"name": "Lê Lợi", "folded": "le loi", "kind": "street", "lat": 10.00, "lon": 106.00, "district": "Quan 1", "importance": 10},
+        {"name": "Lê Lợi", "folded": "le loi", "kind": "street", "lat": 10.04, "lon": 106.03, "district": "Quan 1", "importance": 12},
     ])
     # Step 1: merge BEFORE creating virtual tables (the correct order)
     merge_streets(con)
