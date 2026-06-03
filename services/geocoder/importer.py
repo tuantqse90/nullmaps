@@ -146,6 +146,14 @@ def build(pbf: str, out: str) -> int:
     h._flush()
     db.commit()
 
+    from indexops import merge_streets, build_trigrams
+    # merge_streets must run BEFORE the CREATE VIRTUAL TABLE statements below.
+    # FTS5 content tables and R*Tree virtual tables reference features rows by id;
+    # deleting rows after they are indexed causes "fts5: missing row N" errors and
+    # leaves phantom entries in features_rtree that inflate reverse-geocode results.
+    merge_streets(db)
+    db.commit()
+
     # Rank: places first, then streets, then POIs/addresses (for result ordering)
     db.executescript("""
         CREATE INDEX idx_folded ON features(folded);
@@ -157,6 +165,7 @@ def build(pbf: str, out: str) -> int:
         CREATE VIRTUAL TABLE features_rtree USING rtree(id, minlat, maxlat, minlon, maxlon);
         INSERT INTO features_rtree SELECT id, lat, lat, lon, lon FROM features;
     """)
+    build_trigrams(db)             # hand-built trigram-similarity index
     db.commit()
     db.execute("PRAGMA optimize")
     db.close()
