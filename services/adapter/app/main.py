@@ -32,6 +32,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .polyline import reencode, encode, decode
+from .vinarrative import vi_instruction
 
 _geo_cache: TTLCache = TTLCache(maxsize=2048, ttl=120)  # geocoder read cache (2 min)
 
@@ -360,8 +361,10 @@ async def directions(request: Request):
     endpoint = "/optimized_route" if (optimize and len(mids) >= 1) else "/route"
     costing = costing_for(request)
     rad = snap_radius(request)
+    lang = language_for(request)
+    vi = lang.lower().startswith("vi")     # render Vietnamese narrative ourselves (Valhalla lacks vi)
     payload = {"locations": with_radius(locs, rad), "costing": costing, "units": "kilometers",
-               "directions_options": {"language": language_for(request)}}
+               "directions_options": {"language": lang}}
     co = costing_options(request, costing)
     if co:
         payload["costing_options"] = co
@@ -397,7 +400,7 @@ async def directions(request: Request):
                 "duration": {"text": dur_text(secs), "value": round(secs)},
                 "start_location": {"lat": a["lat"], "lng": a.get("lon", a.get("lng"))},
                 "end_location": {"lat": b["lat"], "lng": b.get("lon", b.get("lng"))},
-                "steps": build_steps(leg, leg_coords),
+                "steps": build_steps(leg, leg_coords, vi),
             }
             oi = a.get("original_index")
             if oi is not None and 0 <= oi < len(locs):
@@ -506,8 +509,9 @@ _MANEUVER = {
 }
 
 
-def build_steps(leg: dict, leg_coords: list) -> list:
-    """Map Valhalla leg maneuvers -> Google Directions steps[]."""
+def build_steps(leg: dict, leg_coords: list, vi: bool = False) -> list:
+    """Map Valhalla leg maneuvers -> Google Directions steps[]. When `vi`, render the
+    instruction in Vietnamese (Valhalla lacks a vi locale); else keep its English."""
     steps = []
     n = len(leg_coords)
     for mv in leg.get("maneuvers", []):
@@ -517,7 +521,7 @@ def build_steps(leg: dict, leg_coords: list) -> list:
         b = leg_coords[ei] if n else (0, 0)
         meters, secs = mv.get("length", 0) * 1000, mv.get("time", 0)
         step = {
-            "html_instructions": mv.get("instruction", ""),
+            "html_instructions": vi_instruction(mv) if vi else mv.get("instruction", ""),
             "distance": {"text": dist_text(meters), "value": round(meters)},
             "duration": {"text": dur_text(secs), "value": round(secs)},
             "start_location": {"lat": a[0], "lng": a[1]},

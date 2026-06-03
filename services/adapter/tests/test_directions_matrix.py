@@ -188,3 +188,35 @@ def test_metrics_requires_key():
     c = TestClient(m.app)
     assert c.get("/metrics").status_code == 403
     assert c.get("/metrics", params={"key": "secret"}).status_code == 200
+
+
+async def fake_route_maneuvers(path, payload):
+    from app.polyline import encode
+    shape6 = encode([(10.7725, 106.6980), (10.7951, 106.7218)], precision=6)
+    return {"trip": {"status": 0,
+                     "locations": [{"lat": 10.7725, "lon": 106.6980}, {"lat": 10.7951, "lon": 106.7218}],
+                     "legs": [{"summary": {"length": 5.4, "time": 540}, "shape": shape6,
+                               "maneuvers": [{"type": 15, "street_names": ["Lê Thánh Tôn"],
+                                              "instruction": "Turn left onto Lê Thánh Tôn",
+                                              "begin_shape_index": 0, "end_shape_index": 1}]}]}}
+
+
+def test_directions_steps_vietnamese_by_default(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "valhalla", fake_route_maneuvers)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/directions/json",
+              params={"origin": "10.77,106.69", "destination": "10.79,106.72", "key": "secret"})
+    step = r.json()["routes"][0]["legs"][0]["steps"][0]
+    assert step["html_instructions"] == "Rẽ trái vào Lê Thánh Tôn"
+
+
+def test_directions_steps_english_when_language_en(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "valhalla", fake_route_maneuvers)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/directions/json",
+              params={"origin": "10.77,106.69", "destination": "10.79,106.72",
+                      "language": "en", "key": "secret"})
+    step = r.json()["routes"][0]["legs"][0]["steps"][0]
+    assert step["html_instructions"] == "Turn left onto Lê Thánh Tôn"
