@@ -51,6 +51,43 @@ def fts_match(q: str) -> str:
 BIAS_PER_KM = 4.0
 
 
+def _trigram_fallback(qn: str, limit: int,
+                      bias: tuple[float, float] | None) -> list[dict]:
+    """Fuzzy fallback when strict FTS returns nothing: rank candidate folded
+    strings by trigram Jaccard similarity, then importance."""
+    Q = trigrams(qn)
+    if not Q:
+        return []
+    ph = ",".join("?" * len(Q))
+    cand = db().execute(
+        f"SELECT folded, COUNT(*) AS shared FROM trgm WHERE g IN ({ph}) "
+        "GROUP BY folded ORDER BY shared DESC LIMIT 50", tuple(Q)).fetchall()
+    keep: dict[str, float] = {}
+    for r in cand:
+        denom = len(Q) + len(trigrams(r["folded"])) - r["shared"]
+        jac = r["shared"] / denom if denom else 0.0
+        if jac >= 0.3:
+            keep[r["folded"]] = jac
+    if not keep:
+        return []
+    ph2 = ",".join("?" * len(keep))
+    rows = db().execute(
+        f"""SELECT f.osm_id, f.name, f.folded, f.kind, f.lat, f.lon, f.extra,
+                   f.importance, f.category, f.housenumber, f.street, f.city,
+                   f.district, f.region
+            FROM features f WHERE f.folded IN ({ph2})""", tuple(keep)).fetchall()
+    out = [dict(r) for r in rows]
+
+    def rank(x) -> tuple:
+        penalty = 0.0
+        if bias is not None:
+            penalty = haversine(bias[0], bias[1], x["lat"], x["lon"]) / 1000.0 * BIAS_PER_KM
+        return (-keep.get(x["folded"], 0.0), -(x["importance"]) + penalty)
+
+    out.sort(key=rank)
+    return out[:limit]
+
+
 def search(q: str, limit: int, bias: tuple[float, float] | None = None) -> list[dict]:
     match = fts_match(q)
     if not match:
@@ -66,6 +103,12 @@ def search(q: str, limit: int, bias: tuple[float, float] | None = None) -> list[
     ).fetchall()
     qn = normalize_query(fold(q))
     out = [dict(r) for r in rows]
+    if not out and len(qn) >= 3:
+        out = _trigram_fallback(qn, limit, bias)
+        for x in out:
+            x.pop("folded", None)
+            x.pop("importance", None)
+        return out
 
     def rank(x) -> tuple:
         penalty = 0.0
