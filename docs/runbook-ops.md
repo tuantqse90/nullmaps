@@ -51,3 +51,12 @@ sqlite3 "$DB" "SELECT district, count(*) FROM features WHERE folded='le loi' AND
 
 Then spot-check the service: `curl 'localhost:2322/geocode?q=nguyn+hue'` (typo) returns Nguyễn Huệ,
 and `curl 'localhost:2322/geocode?q=q1'` returns Quận 1.
+
+## Build 3D terrain (④b, one-off)
+
+- `bash infra/test-terrain-encode.sh` — verify the Mapbox terrain-RGB encode recipe on a synthetic DEM
+  (fast, no download). Run this first; it must print "round-trips within 1 m".
+- `bash infra/build-terrain.sh` — one-off (box, off-peak): builds `data/terrain.mbtiles` from the
+  Copernicus DEM (GDAL-only, `gdaladdo -r nearest`). Then `docker compose -f docker-compose.yml up -d martin`
+  to serve `/tiles/terrain`, and `bash infra/backup.sh` to push it to R2 with the other DEM artifacts.
+- The opt-in 3D map is `style-terrain.json` (`nm.map(..., { theme: "terrain" })`); default styles stay 2D.

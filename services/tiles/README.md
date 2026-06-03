@@ -64,3 +64,15 @@ GeoJSON layer — correct for any user-facing app (the brief's sovereignty note)
 - `make style-lint` validates `style.json` + `style-dark.json` against the MapLibre style spec and
   checks every `icon-image` name has a `sprites/<name>.svg` (`services/tiles/check-icons.mjs`). CI runs it.
 - Verify the visual effect with `make demo`: fewer POI pins in dense HCMC at z14, important POIs retained.
+
+## 3D terrain (④b)
+
+- `infra/build-terrain.sh` encodes the Copernicus GLO-90 DEM as **Mapbox terrain-RGB** `data/terrain.mbtiles`
+  (GDAL-only, no rio-rgbify). **Overviews MUST use `gdaladdo -r nearest`** — averaging RGB-encoded
+  elevation corrupts it. `infra/test-terrain-encode.sh` round-trips the encode on a synthetic DEM (no
+  465 MB download); the full VN build is box-only and off-peak.
+- Martin serves it at `/tiles/terrain`; `style-terrain.json` (served at `/style-terrain.json`) adds a
+  `raster-dem` source + `terrain` (exaggeration 1.3) + a root-level `sky`. The default `style.json` /
+  `style-dark.json` stay flat/fast — terrain is opt-in.
+- Consume it: `nm.map(maplibregl, el, { theme: "terrain" })`, or the demo's theme toggle
+  (light → dark → terrain). Tune `exaggeration` in `style-terrain.json` to taste.
