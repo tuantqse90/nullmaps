@@ -158,6 +158,10 @@
     #theme { position: absolute; top: 12px; right: 12px; z-index: 5; display: flex; gap: 0;
       background: var(--panel); border: 1px solid var(--panel-b); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
     #theme button { width: 42px; height: 42px; border: 0; background: transparent; cursor: pointer; font-size: 18px; transition: background .15s; }
+    /* round the outer buttons so an active background follows the pill — a 1px border +
+       border-radius + overflow:hidden otherwise lets the square fill bleed past the corner */
+    #theme button:first-child { border-radius: 11px 0 0 11px; }
+    #theme button:last-child { border-radius: 0 11px 11px 0; }
     #theme button:hover { background: rgba(0,178,96,.12); }
     #theme button.on { background: var(--green); }
 
