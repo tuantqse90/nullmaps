@@ -13,15 +13,6 @@
 	auto_https off
 }
 
-# HTTP basic auth for the web app page + its keyless /app API proxy (single operator).
-# Tiles/style/docs stay public so the basemap still loads. Change the hash with:
-#   docker compose exec gateway caddy hash-password --plaintext '<new-pw>'
-(appauth) {
-	basicauth {
-		nullshift $2a$14$g5mM8d9G2UDPLvgQStlK8.QBkVEdE8wJwk0mu7fPQBoo59/M1fQVS
-	}
-}
-
 :8088 {
 	encode gzip
 
@@ -79,16 +70,14 @@
 	# the key header. (Open to page visitors — fine for an internal demo.)
 	@app path /app/*
 	handle @app {
-		import appauth
 		uri strip_prefix /app
 		reverse_proxy adapter:8000 {
 			header_up X-API-Key {$API_KEY}
 		}
 	}
 
-	# Demo / web app page (basic-auth gated)
+	# Demo / web app page (public)
 	handle {
-		import appauth
 		reverse_proxy demo:80
 	}
 }
