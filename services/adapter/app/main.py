@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -384,6 +385,20 @@ def _photon_feature(f: dict) -> dict:
     }
 
 
+_HN_RE = re.compile(r"^\s*(\d{1,5}[A-Za-z]?(?:/\d+)?)\s+(\D.{2,})$")
+
+
+def _split_housenumber(q: str):
+    """'543 Nguyễn Duy Trinh' -> ('543', 'Nguyễn Duy Trinh'); else (None, q).
+
+    Photon free-text search mishandles a leading house number — it matches '543' as a
+    house number on ANY street with that number ('543 Nguyễn Hoàng Tôn' in Hà Nội) or
+    fuzzes the digits near the viewport. Searching the street alone ranks it correctly;
+    we re-attach the number to plain street results (Google-style '543 <street>')."""
+    m = _HN_RE.match(q or "")
+    return (m.group(1), m.group(2).strip()) if m else (None, q)
+
+
 async def photon_call(path: str, params: dict) -> dict | None:
     """Run a geocoder-style call (/geocode, /autocomplete, /reverse) against Photon."""
     lat, lon = params.get("lat"), params.get("lon")
@@ -397,12 +412,19 @@ async def photon_call(path: str, params: dict) -> dict | None:
     q = params.get("q")
     if not q:
         return {"results": []}
-    pp = {"q": q, "limit": params.get("limit", 5)}
+    hn, street = _split_housenumber(q)          # search the street alone; re-attach hn below
+    pp = {"q": street, "limit": params.get("limit", 5)}
     if lat is not None and lon is not None:
         pp["lat"], pp["lon"] = lat, lon
     r = await app.state.http.get(f"{PHOTON_URL}/api", params=pp, timeout=8)
     r.raise_for_status()
-    return {"results": [_photon_feature(f) for f in ((r.json() or {}).get("features") or [])]}
+    results = [_photon_feature(f) for f in ((r.json() or {}).get("features") or [])]
+    if hn:
+        for x in results:                       # '543 Đường Nguyễn Duy Trinh' on a plain street
+            if x["kind"] == "street" and not any(c.isdigit() for c in (x["name"] or "")):
+                x["name"] = f"{hn} {x['name']}"
+                x["housenumber"] = hn
+    return {"results": results}
 
 
 async def geocoder(path: str, params: dict) -> dict:

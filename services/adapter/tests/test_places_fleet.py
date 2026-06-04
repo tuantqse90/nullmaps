@@ -174,3 +174,13 @@ def test_photon_feature_kinds_and_address_name():
     place = m._photon_feature({"geometry": {"coordinates": [1, 2]},
                                "properties": {"name": "Bến Thành", "type": "suburb"}})
     assert place["kind"] == "place"
+
+
+def test_split_housenumber():
+    m = load()
+    assert m._split_housenumber("543 Nguyễn Duy Trinh") == ("543", "Nguyễn Duy Trinh")
+    assert m._split_housenumber("12A Lê Lợi") == ("12A", "Lê Lợi")
+    assert m._split_housenumber("250/5 Cách Mạng Tháng Tám") == ("250/5", "Cách Mạng Tháng Tám")
+    assert m._split_housenumber("Nguyễn Huệ") == (None, "Nguyễn Huệ")     # no leading number
+    assert m._split_housenumber("123") == (None, "123")                  # number only, no street
+    assert m._split_housenumber("highlands") == (None, "highlands")
