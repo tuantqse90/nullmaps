@@ -11,6 +11,7 @@ regressions — it encodes the failure classes we've actually hit.
 | `be_fuzz.py` | BE | Robustness — throws malformed/boundary inputs at every endpoint; flags any **5xx**, non-JSON body, or response missing the Google-shaped `status`. Asserts the service never crashes. |
 | `be_probe.py` | BE | Correctness — a curated set of **invariants**: routes that must resolve (airports, parks, stations, cross-province) and geocodes that must land in the right area (±tolerance). Catches the "wrong province / no route" class. |
 | `fe_smoke.mjs` | FE | Headless Chrome drives every feature (search, directions, multi-stop, nearby, isochrone, share+restore, theme, mobile) and asserts **0 uncaught JS errors** + behavioural invariants. Screenshots per phase. |
+| `fe_theme.mjs` | FE | **Playwright** visual + behavioural regression for the theme switcher — reads the control's corner pixel (active fill must not bleed past the rounded pill corner) + asserts light/dark/3D switching. Catches the *visual* class `fe_smoke` misses (it only checks "didn't throw"). `playwright-core` + system Chrome (`channel: chrome`, no download). |
 | `run.sh` | both | Orchestrates all three, aggregates, exits non-zero if anything found a bug. |
 
 There is also a deep, on-demand multi-agent version in

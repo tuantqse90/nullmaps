@@ -53,6 +53,14 @@ if [ "$WHAT" = "all" ] || [ "$WHAT" = "fe" ]; then
   fi
   ( cd harness && NODE_PATH="$(pwd)/node_modules" node fe_smoke.mjs ) || rc=1
   echo
+  echo "---- theme switcher visual regression (Playwright) ----"
+  if ! ( cd harness && node -e "require.resolve('playwright-core')" ) >/dev/null 2>&1; then
+    echo "   (installing playwright-core into harness/ ...)"
+    ( cd harness && [ -f package.json ] || echo '{"name":"nm-harness","private":true}' > package.json
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i --silent playwright-core@1.48 >/dev/null 2>&1 )
+  fi
+  ( cd harness && node fe_theme.mjs ) || rc=1
+  echo
 fi
 
 echo "==================== done (exit $rc) ===================="

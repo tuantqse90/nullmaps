@@ -216,10 +216,14 @@ style-lint: ## (tiles) Validate styles vs the MapLibre spec + check icon/sprite 
 	npx -y -p @maplibre/maplibre-gl-style-spec gl-style-validate services/tiles/style/style-terrain.json
 	node services/tiles/check-icons.mjs
 
-.PHONY: bug-hunt bug-hunt-be bug-hunt-fe
+.PHONY: bug-hunt bug-hunt-be bug-hunt-fe bug-hunt-theme
 bug-hunt: ## (harness) Run the BE + FE bug harness against NM_BASE (reads .env for API_KEY)
 	bash harness/run.sh all
 bug-hunt-be: ## (harness) Backend only: fuzz (robustness) + probe (correctness)
 	bash harness/run.sh be
-bug-hunt-fe: ## (harness) Frontend only: headless feature smoke + 0-pageerror check
+bug-hunt-fe: ## (harness) Frontend only: headless feature smoke + theme visual regression
 	bash harness/run.sh fe
+bug-hunt-theme: ## (harness) Just the Playwright theme-switcher visual regression
+	@cd harness && { node -e "require.resolve('playwright-core')" 2>/dev/null || \
+	  { [ -f package.json ] || echo '{"name":"nm-harness","private":true}' > package.json; \
+	    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i --silent playwright-core@1.48; }; } && node fe_theme.mjs
