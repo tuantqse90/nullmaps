@@ -36,6 +36,13 @@ if [ "$WHAT" = "all" ] || [ "$WHAT" = "be" ]; then
   echo
 fi
 
+if [ "$WHAT" = "all" ]; then
+  # BE just spent the per-key rate-limit budget; the FE's /app calls share that one
+  # injected key, so give the minute window time to reset before the headless run.
+  echo "(pausing 65s so the rate-limit window resets before the FE run...)"
+  sleep 65
+fi
+
 if [ "$WHAT" = "all" ] || [ "$WHAT" = "fe" ]; then
   echo "---- frontend smoke (headless: features + 0 pageerrors) ----"
   if ! node -e "require.resolve('puppeteer-core')" >/dev/null 2>&1; then
