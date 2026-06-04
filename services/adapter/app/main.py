@@ -386,6 +386,14 @@ def _photon_feature(f: dict) -> dict:
 
 
 _HN_RE = re.compile(r"^\s*(\d{1,5}[A-Za-z]?(?:/\d+)?)\s+(\D.{2,})$")
+_DISTRICT_Q_RE = re.compile(r"^\s*(?:q|quận|quan)\.?\s*([1-9]|1[0-2])\s*$", re.IGNORECASE)
+
+
+def _is_district_q(q) -> bool:
+    """A bare HCMC district shorthand (q7 / quận 7). Photon returns POIs named 'Q7';
+    the SQLite geocoder resolves it to the legacy district (districts were abolished in
+    the 2025 admin reform, so it's the only source)."""
+    return bool(q and _DISTRICT_Q_RE.match(q))
 
 
 def _split_housenumber(q: str):
@@ -434,7 +442,8 @@ async def geocoder(path: str, params: dict) -> dict:
     key = (path, frozenset(params.items()))
     if key in _geo_cache:
         return _geo_cache[key]
-    if SEARCH_ENGINE == "photon" and path in ("/geocode", "/autocomplete", "/reverse"):
+    if SEARCH_ENGINE == "photon" and path in ("/geocode", "/autocomplete", "/reverse") \
+            and not _is_district_q(params.get("q")):     # q1-q12 -> SQLite legacy districts
         try:
             res = await photon_call(path, params)
             if res is not None and (res.get("results") or res.get("result")):

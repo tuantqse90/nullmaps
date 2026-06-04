@@ -184,3 +184,13 @@ def test_split_housenumber():
     assert m._split_housenumber("Nguyễn Huệ") == (None, "Nguyễn Huệ")     # no leading number
     assert m._split_housenumber("123") == (None, "123")                  # number only, no street
     assert m._split_housenumber("highlands") == (None, "highlands")
+
+
+def test_is_district_q():
+    m = load()
+    assert m._is_district_q("q7") and m._is_district_q("Q1") and m._is_district_q("quận 12")
+    assert m._is_district_q("quan 3") and m._is_district_q("q.5")
+    assert not m._is_district_q("q7 boulevard")   # extra text -> a POI, not the district
+    assert not m._is_district_q("q13")            # no district 13
+    assert not m._is_district_q("nguyễn huệ")
+    assert not m._is_district_q(None)
