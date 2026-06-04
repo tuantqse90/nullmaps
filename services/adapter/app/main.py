@@ -446,11 +446,31 @@ async def geocoder(path: str, params: dict) -> dict:
             and not _is_district_q(params.get("q")):     # q1-q12 -> SQLite legacy districts
         try:
             res = await photon_call(path, params)
-            if res is not None and (res.get("results") or res.get("result")):
+        except Exception:
+            res = None                                   # Photon down/slow -> SQLite below
+        if path == "/reverse":
+            if res and res.get("result"):
                 _geo_cache[key] = res
                 return res
-        except Exception:
-            pass    # Photon down / slow / unindexed -> fall back to the SQLite geocoder
+        else:
+            p_items = (res or {}).get("results") or []
+            # Typo net: Photon fuzz is weak on genuine misspellings ('nguyn hue'). If a
+            # multi-word query yields ≤1 hit it likely whiffed — pull the SQLite trigram
+            # results (strong on typos) in front, deduped.
+            q = params.get("q") or ""
+            if len(q.split()) >= 2 and len(p_items) <= 1:
+                try:
+                    s_items = (await _geocoder_fetch(path, params)).get("results") or []
+                except Exception:
+                    s_items = []
+                if s_items:
+                    keyf = lambda x: (x.get("name"), round(x.get("lat") or 0, 4))
+                    seen = {keyf(x) for x in s_items}
+                    p_items = s_items + [x for x in p_items if keyf(x) not in seen]
+            if p_items:
+                res = {"results": p_items[:params.get("limit", 5)]}
+                _geo_cache[key] = res
+                return res
     result = await _geocoder_fetch(path, params)
     _geo_cache[key] = result
     return result
