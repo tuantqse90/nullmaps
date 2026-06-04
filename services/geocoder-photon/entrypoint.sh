@@ -4,13 +4,20 @@
 set -euo pipefail
 
 DATA="${PHOTON_DATA:-/photon}"
-EXTRACT_URL="${PHOTON_EXTRACT_URL:-https://download1.graphhopper.com/public/extracts/by-country-code/vn/photon-db-vn-latest.tar.bz2}"
+BASE="https://download1.graphhopper.com/public/extracts/by-country-code/vn/"
 
 mkdir -p "$DATA"
 if [ ! -d "$DATA/photon_data" ]; then
-  echo ">> Photon index missing — downloading VN dump ($EXTRACT_URL)"
+  URL="${PHOTON_EXTRACT_URL:-}"
+  if [ -z "$URL" ]; then
+    # the "-latest" alias 404s on their server — discover the newest dated dump instead
+    FILE=$(curl -fsSL "$BASE" | grep -oE 'photon-db-vn-[0-9]{6}\.tar\.bz2' | sort -u | tail -1)
+    [ -n "$FILE" ] || { echo "!! could not find a VN dump under $BASE"; exit 1; }
+    URL="${BASE}${FILE}"
+  fi
+  echo ">> Photon index missing — downloading VN dump: $URL"
   # stream-extract so we never store the full .tar.bz2 (saves disk)
-  curl -fSL "$EXTRACT_URL" | tar -xj -C "$DATA"
+  curl -fSL "$URL" | tar -xj -C "$DATA"
   echo ">> Photon VN index ready ($(du -sh "$DATA/photon_data" | cut -f1))"
 fi
 
