@@ -95,3 +95,18 @@ def test_legacy_district_wins_fold_collision(monkeypatch):
     monkeypatch.setattr(m, "_conn", con)
     res = m.search("binh thanh", 5)
     assert res and res[0]["name"] == "Bình Thạnh"
+
+
+def test_exact_match_recovered_when_pushed_out_of_fts_window(monkeypatch):
+    # "binh"* "thanh"* prefix-matches every "Thanh Bình" too. Inserting 40 such decoys
+    # FIRST (lower rowids) pushes the exact "Bình Thạnh" past the bm25 LIMIT (limit*12)
+    # window — only the exact-folded supplement makes it reachable for the tie-break.
+    rows = [{"name": "Thanh Bình", "kind": "poi", "lat": 16.0 + i * 0.01, "lon": 108.0,
+             "importance": 40, "category": "village"} for i in range(40)]
+    rows.append({"name": "Bình Thạnh", "kind": "boundary", "lat": 10.81, "lon": 106.709,
+                 "importance": 60, "category": "legacy_district"})
+    con = make_db(rows)
+    monkeypatch.setattr(m, "_conn", con)
+    res = m.search("bình thạnh", 3)                      # window = 36 < 41 candidates
+    assert res and res[0]["name"] == "Bình Thạnh"
+    assert res[0]["category"] == "legacy_district"
