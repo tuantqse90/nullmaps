@@ -147,3 +147,30 @@ def test_rate_limit_429(monkeypatch):
     assert first.status_code == 200
     assert second.status_code == 429
     assert second.json()["status"] == "OVER_QUERY_LIMIT"
+
+
+def test_photon_feature_maps_to_internal_shape():
+    m = load()
+    f = {"geometry": {"coordinates": [106.7003, 10.7773]},
+         "properties": {"name": "Highlands Coffee", "osm_id": 42, "osm_type": "N",
+                        "osm_key": "amenity", "osm_value": "cafe",
+                        "district": "Quận 1", "city": "Hồ Chí Minh", "state": "Hồ Chí Minh"}}
+    r = m._photon_feature(f)
+    assert r["name"] == "Highlands Coffee"
+    assert (r["lat"], r["lon"]) == (10.7773, 106.7003)
+    assert r["kind"] == "poi" and r["category"] == "cafe"
+    assert r["extra"] == "Quận 1, Hồ Chí Minh"          # context, deduped (state == city)
+    assert r["osm_id"] == "N42"
+
+
+def test_photon_feature_kinds_and_address_name():
+    m = load()
+    street = m._photon_feature({"geometry": {"coordinates": [1, 2]},
+                                "properties": {"name": "Nguyễn Huệ", "osm_key": "highway", "osm_value": "primary"}})
+    assert street["kind"] == "street"
+    addr = m._photon_feature({"geometry": {"coordinates": [1, 2]},
+                              "properties": {"housenumber": "543", "street": "Nguyễn Duy Trinh"}})
+    assert addr["kind"] == "address" and addr["name"] == "543 Nguyễn Duy Trinh"
+    place = m._photon_feature({"geometry": {"coordinates": [1, 2]},
+                               "properties": {"name": "Bến Thành", "type": "suburb"}})
+    assert place["kind"] == "place"

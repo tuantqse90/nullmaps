@@ -85,6 +85,11 @@ async def google_shaped_error(request: Request, exc: StarletteHTTPException):
 API_KEY = os.environ.get("API_KEY", "")
 VALHALLA_URL = os.environ.get("VALHALLA_URL", "http://valhalla:8002").rstrip("/")
 GEOCODER_URL = os.environ.get("GEOCODER_URL", "http://geocoder:2322").rstrip("/")
+PHOTON_URL = os.environ.get("PHOTON_URL", "http://photon:2322").rstrip("/")
+# Text-search engine: "photon" (prominence-ranked, falls back to the SQLite geocoder
+# on error/empty) or "sqlite" (the lightweight engine only). nearby/details always
+# use the SQLite geocoder (Photon has no category-nearby / by-id lookup here).
+SEARCH_ENGINE = os.environ.get("SEARCH_ENGINE", "photon").lower()
 NORMALIZER_URL = os.environ.get("NORMALIZER_URL", "").rstrip("/")
 
 # Google travel modes / Goong vehicle -> Valhalla costing. Motorbike-first: an
@@ -342,12 +347,77 @@ async def _geocoder_fetch(path: str, params: dict) -> dict:
     return r.json() if r.content else {}
 
 
+# --- Photon (prominence-ranked typeahead) -> internal result shape ------------
+_PLACE_TYPES = {"city", "town", "village", "hamlet", "district", "locality", "state",
+                "county", "suburb", "neighbourhood", "quarter", "region", "island"}
+
+
+def _photon_kind(p: dict) -> str:
+    t = p.get("type") or ""
+    if t == "house" or p.get("housenumber"):
+        return "address"
+    if p.get("osm_key") == "highway" or t == "street":
+        return "street"
+    if t in _PLACE_TYPES:
+        return "place"
+    return "poi"
+
+
+def _photon_feature(f: dict) -> dict:
+    """Map one Photon GeoJSON feature onto the SQLite-geocoder result dict the adapter's
+    formatters expect (name/lat/lon/kind/category/housenumber/street/city/district/
+    region/osm_id/extra). `extra` carries the district/city context shown as the
+    autocomplete secondary line."""
+    p = f.get("properties") or {}
+    c = (f.get("geometry") or {}).get("coordinates") or [None, None]
+    name = p.get("name") or " ".join(filter(None, [p.get("housenumber"), p.get("street")])) \
+        or p.get("city") or p.get("district") or ""
+    ctx = ", ".join(dict.fromkeys(x for x in (p.get("district"), p.get("city"), p.get("state")) if x))
+    return {
+        "name": name, "lat": c[1], "lon": c[0],
+        "kind": _photon_kind(p), "category": p.get("osm_value") or "",
+        "housenumber": p.get("housenumber"), "street": p.get("street"),
+        "city": p.get("city"), "district": p.get("district"), "region": p.get("state"),
+        "osm_id": f"{p.get('osm_type', '')}{p.get('osm_id', '')}", "extra": ctx,
+    }
+
+
+async def photon_call(path: str, params: dict) -> dict | None:
+    """Run a geocoder-style call (/geocode, /autocomplete, /reverse) against Photon."""
+    lat, lon = params.get("lat"), params.get("lon")
+    if path == "/reverse":
+        if lat is None or lon is None:
+            return None
+        r = await app.state.http.get(f"{PHOTON_URL}/reverse", params={"lat": lat, "lon": lon, "limit": 1}, timeout=8)
+        r.raise_for_status()
+        feats = (r.json() or {}).get("features") or []
+        return {"result": _photon_feature(feats[0]) if feats else None}
+    q = params.get("q")
+    if not q:
+        return {"results": []}
+    pp = {"q": q, "limit": params.get("limit", 5)}
+    if lat is not None and lon is not None:
+        pp["lat"], pp["lon"] = lat, lon
+    r = await app.state.http.get(f"{PHOTON_URL}/api", params=pp, timeout=8)
+    r.raise_for_status()
+    return {"results": [_photon_feature(f) for f in ((r.json() or {}).get("features") or [])]}
+
+
 async def geocoder(path: str, params: dict) -> dict:
     """Cached geocoder read. Typeahead/reverse repeat heavily; cache the engine
-    response for `ttl` seconds. Errors raise from _geocoder_fetch and are not cached."""
+    response for `ttl` seconds. Text search prefers Photon (SEARCH_ENGINE=photon) and
+    falls back to the SQLite geocoder on error/empty; nearby/details stay on SQLite."""
     key = (path, frozenset(params.items()))
     if key in _geo_cache:
         return _geo_cache[key]
+    if SEARCH_ENGINE == "photon" and path in ("/geocode", "/autocomplete", "/reverse"):
+        try:
+            res = await photon_call(path, params)
+            if res is not None and (res.get("results") or res.get("result")):
+                _geo_cache[key] = res
+                return res
+        except Exception:
+            pass    # Photon down / slow / unindexed -> fall back to the SQLite geocoder
     result = await _geocoder_fetch(path, params)
     _geo_cache[key] = result
     return result
