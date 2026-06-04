@@ -118,26 +118,17 @@ def costing_options(request: Request, costing: str) -> dict:
     q = request.query_params
     opts: dict = {}
     for k in _USE_KNOBS:
-        v = q.get(k)
-        if v is not None:
-            try:
-                opts[k] = max(0.0, min(1.0, float(v)))   # Valhalla use_* are 0..1
-            except ValueError:
-                pass
-    ts = q.get("top_speed")
-    if ts:
-        try:
-            opts["top_speed"] = float(ts)
-        except ValueError:
-            pass
+        f = _ffloat(q.get(k))
+        if f is not None:
+            opts[k] = max(0.0, min(1.0, f))              # Valhalla use_* are 0..1
+    ts = _ffloat(q.get("top_speed"))
+    if ts is not None:
+        opts["top_speed"] = ts
     if costing == "truck":
         for param in ("height", "width", "length", "weight", "axle_load"):
-            v = q.get(param)
-            if v:
-                try:
-                    opts[param] = float(v)
-                except ValueError:
-                    pass
+            f = _ffloat(q.get(param))
+            if f is not None:
+                opts[param] = f
         if (q.get("hazmat") or "").lower() in ("1", "true", "yes"):
             opts["hazmat"] = True
     return {costing: opts} if opts else {}
@@ -170,6 +161,8 @@ def avoid_zones(request: Request) -> list:
         return []
     try:
         geo = json.loads(raw)
+        if not isinstance(geo, dict):                # e.g. "[1,2,3]" or a bare number
+            return []
         t = geo.get("type")
         if t == "Polygon":
             rings = [geo["coordinates"][0]]
@@ -280,6 +273,23 @@ def parse_latlng(s: str) -> dict:
             not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
         raise HTTPException(status_code=400, detail=f"lat,lng out of range: {s!r}")
     return {"lat": lat, "lon": lon}
+
+
+def _ffloat(v) -> float | None:
+    """float() that rejects nan/inf (which are not JSON and 500 Valhalla)."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
+
+
+def _clean_text(s: str | None) -> str | None:
+    """Strip control chars (incl. NUL) that break the downstream FTS/HTTP layer,
+    keeping printable text + normal whitespace (Vietnamese, emoji, etc. survive)."""
+    if s is None:
+        return s
+    return "".join(ch for ch in s if ch.isprintable() or ch in " \t")
 
 
 def costing_for(request: Request) -> str:
@@ -664,7 +674,7 @@ async def geocode(request: Request):
             return {"status": "ZERO_RESULTS", "results": []}
         results = [r]
     else:
-        address = request.query_params.get("address")
+        address = _clean_text(request.query_params.get("address"))
         if not address:
             return JSONResponse({"status": "INVALID_REQUEST", "results": []}, status_code=400)
         address = await maybe_normalize(request, address, timeout=8)
@@ -691,7 +701,7 @@ async def nearbysearch(request: Request):
     if request.query_params.get("type"):
         params["category"] = request.query_params["type"]
     if request.query_params.get("keyword"):
-        params["q"] = request.query_params["keyword"]
+        params["q"] = _clean_text(request.query_params["keyword"])
     data = await geocoder("/nearby", params)
     res = data.get("results", [])
     return {
@@ -729,7 +739,7 @@ async def autocomplete(request: Request):
     Supports ?location=lat,lng viewport bias and opt-in ?normalize=1.
     """
     require_key(request)
-    text = request.query_params.get("input")
+    text = _clean_text(request.query_params.get("input"))
     if not text:
         return JSONResponse({"status": "INVALID_REQUEST", "predictions": []}, status_code=400)
     text = await maybe_normalize(request, text, timeout=2)  # typeahead must not hang on the LLM

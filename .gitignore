@@ -35,3 +35,9 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+
+# bug-hunting harness (local deps + artifacts)
+harness/node_modules/
+harness/package.json
+harness/package-lock.json
+harness/*.png

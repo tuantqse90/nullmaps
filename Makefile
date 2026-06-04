@@ -215,3 +215,11 @@ style-lint: ## (tiles) Validate styles vs the MapLibre spec + check icon/sprite 
 	npx -y -p @maplibre/maplibre-gl-style-spec gl-style-validate services/tiles/style/style-dark.json
 	npx -y -p @maplibre/maplibre-gl-style-spec gl-style-validate services/tiles/style/style-terrain.json
 	node services/tiles/check-icons.mjs
+
+.PHONY: bug-hunt bug-hunt-be bug-hunt-fe
+bug-hunt: ## (harness) Run the BE + FE bug harness against NM_BASE (reads .env for API_KEY)
+	bash harness/run.sh all
+bug-hunt-be: ## (harness) Backend only: fuzz (robustness) + probe (correctness)
+	bash harness/run.sh be
+bug-hunt-fe: ## (harness) Frontend only: headless feature smoke + 0-pageerror check
+	bash harness/run.sh fe
