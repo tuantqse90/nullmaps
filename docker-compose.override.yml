@@ -16,6 +16,9 @@ services:
   valhalla:
     ports:
       - "${VALHALLA_PORT:-8002}:8002"
+  vroom:
+    ports:
+      - "${VROOM_PORT:-3001}:3000"   # 3001 host: martin already owns 3000 locally
   geocoder:
     ports:
       - "${GEOCODER_PORT:-2322}:2322"

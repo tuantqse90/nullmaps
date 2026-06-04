@@ -1,0 +1,56 @@
+# vroom-express (v0.12.0) config for the NullMaps VRP service.
+#
+# VROOM solves the routing problem (assign jobs to vehicles + order each route); it gets
+# the travel-time matrix from the SAME Valhalla graph that powers /route and /matrix — so
+# optimization respects the VN motorbike network. Engines stay internal: the adapter
+# proxies this at /v1/optimize (key-gated). See services/routing/README.md.
+#
+# Schema must match the bundled vroom-express version — keep ALL cliArgs keys (a missing
+# `baseurl` crashes config.js on start).
+cliArgs:
+  geometry: false       # retrieve route geometry (-g); clients opt in per request with options.g
+  planmode: false
+  threads: 4
+  explore: 5            # 0..5 local-search depth; higher = better routes, slower
+  limit: '5mb'          # max request size
+  logdir: '/..'
+  logsize: '100M'
+  maxlocations: 2000
+  maxvehicles: 200
+  override: true
+  path: ''
+  port: 3000            # expressjs port
+  router: 'valhalla'    # use Valhalla (not OSRM/ORS) for the cost matrix
+  timeout: 300000
+  baseurl: '/'
+# Every profile points at the one Valhalla instance — Valhalla picks the costing model
+# per request, so a single graph serves motor_scooter / auto / truck / etc.
+routingServers:
+  valhalla:
+    auto:
+      host: 'valhalla'
+      port: '8002'
+    bicycle:
+      host: 'valhalla'
+      port: '8002'
+    pedestrian:
+      host: 'valhalla'
+      port: '8002'
+    motorcycle:
+      host: 'valhalla'
+      port: '8002'
+    motor_scooter:
+      host: 'valhalla'
+      port: '8002'
+    taxi:
+      host: 'valhalla'
+      port: '8002'
+    hov:
+      host: 'valhalla'
+      port: '8002'
+    truck:
+      host: 'valhalla'
+      port: '8002'
+    bus:
+      host: 'valhalla'
+      port: '8002'

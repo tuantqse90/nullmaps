@@ -74,6 +74,22 @@ services:
       retries: 3
       start_period: 600s   # first start builds the graph
 
+  # --- Phase 2+: multi-vehicle route optimization (VRP) --------------------
+  # VROOM assigns jobs to vehicles + orders each route, using Valhalla for the cost
+  # matrix. Internal-only; the adapter proxies it at /v1/optimize (key-gated).
+  vroom:
+    image: ghcr.io/vroom-project/vroom-docker:v1.15.0
+    expose:
+      - "3000"
+    environment:
+      - VROOM_ROUTER=valhalla
+    volumes:
+      - ./services/routing/vroom-config.yml:/conf/config.yml
+    depends_on:
+      - valhalla
+    restart: unless-stopped
+    mem_limit: 512m
+
   # --- Phase 3: lightweight VN geocoder ------------------------------------
   # Serves /geocode /reverse /autocomplete from a SQLite index (importer.py).
   # "Good enough" for internal use; Photon is the heavier production option on a
@@ -134,6 +150,7 @@ services:
       - SEARCH_ENGINE=${SEARCH_ENGINE:-photon}
       - OVERTURE_DB=/data/overture_vn.db
       - NORMALIZER_URL=http://normalizer:8100
+      - VROOM_URL=http://vroom:3000
     volumes:
       # Overture Maps VN POIs (≈978k businesses) — read-only FTS index the adapter
       # merges into Photon results. Absent locally = gracefully skipped (see main.py).
@@ -142,6 +159,7 @@ services:
       - valhalla
       - geocoder
       - normalizer
+      - vroom
     restart: unless-stopped
     mem_limit: 320m
     healthcheck:

@@ -12,6 +12,7 @@ Live endpoints (all engines up):
   GET /maps/api/place/nearbysearch/json-> geocoder /nearby
   GET /maps/api/place/details/json     -> geocoder /detail
   GET /v1/isochrone, GET /v1/snap      -> Valhalla /isochrone, /trace_route (native)
+  POST /v1/optimize                    -> VROOM VRP (multi-vehicle), Valhalla-costed
 
 Auth: single shared API_KEY, checked on every endpoint except /healthz.
 Pass it Google-style as ?key=... or as an X-API-Key header.
@@ -66,7 +67,7 @@ app = FastAPI(
         "optional `location=lat,lng` viewport bias, `normalize=1` for AI cleanup.\n\n"
         "**Autocomplete** `GET /maps/api/place/autocomplete/json` — `input=`, optional `location=`.\n\n"
         "**Fleet (native):** `GET /v1/isochrone?location=&contours=10,20`, "
-        "`GET /v1/snap?path=lat,lng|...`."
+        "`GET /v1/snap?path=lat,lng|...`, `POST /v1/optimize` (multi-vehicle VRP)."
     ),
 )
 
@@ -98,6 +99,10 @@ SEARCH_ENGINE = os.environ.get("SEARCH_ENGINE", "photon").lower()
 # OSM/Photon lack). Merged into Photon text-search results. Empty/missing = skipped.
 OVERTURE_DB = os.environ.get("OVERTURE_DB", "/data/overture_vn.db")
 NORMALIZER_URL = os.environ.get("NORMALIZER_URL", "").rstrip("/")
+# VROOM multi-vehicle route optimizer (VRP); routes its cost matrix through Valhalla.
+VROOM_URL = os.environ.get("VROOM_URL", "http://vroom:3000").rstrip("/")
+# Default Valhalla costing for optimizer vehicles that don't set their own `profile`.
+VROOM_PROFILE = os.environ.get("VROOM_PROFILE", "motor_scooter")
 
 # Google travel modes / Goong vehicle -> Valhalla costing. Motorbike-first: an
 # unspecified or two-wheeler mode routes as a scooter (NullMaps' primary use case).
@@ -1203,3 +1208,54 @@ async def snap(request: Request):
         "duration": {"text": dur_text(s["time"]), "value": round(s["time"])},
         "snapped_polyline": {"points": encode(coords, precision=5)},
     }
+
+
+def _prep_optimize(body):
+    """Validate a VROOM problem and default each vehicle's costing profile (motorbike-
+    first). Returns (cleaned_body, error_message_or_None)."""
+    if not isinstance(body, dict):
+        return None, "body must be a JSON object"
+    vehicles = body.get("vehicles")
+    if not isinstance(vehicles, list) or not vehicles:
+        return None, "at least one vehicle is required"
+    if not body.get("jobs") and not body.get("shipments"):
+        return None, "at least one job or shipment is required"
+    for v in vehicles:
+        if isinstance(v, dict):
+            v.setdefault("profile", VROOM_PROFILE)   # motorbike-first cost matrix
+    return body, None
+
+
+async def vroom_call(body: dict):
+    """POST a VROOM problem to the optimizer; returns (solution_json, status_code)."""
+    try:
+        r = await app.state.http.post(f"{VROOM_URL}/", json=body, timeout=60)
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"optimizer unreachable: {e}")
+    return (r.json() if r.content else {}), r.status_code
+
+
+@app.post("/v1/optimize")
+async def optimize(request: Request):
+    """Multi-vehicle route optimization (VRP) via VROOM, costed on the Valhalla graph.
+
+    Body is a VROOM problem JSON — `vehicles` (id, start/end as [lon,lat], capacity,
+    time_window, skills) plus `jobs` (id, location [lon,lat], service seconds, amount,
+    time_windows, skills) and/or `shipments`. Vehicles without a `profile` default to the
+    motorbike costing. Returns the VROOM solution: `routes` (each a vehicle with ordered
+    `steps`), `summary` (cost/duration/…), and `unassigned`."""
+    require_key(request)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"code": 1, "error": "invalid JSON body"}, status_code=400)
+    body, err = _prep_optimize(body)
+    if err:
+        return JSONResponse({"code": 1, "error": err}, status_code=400)
+    data, status = await vroom_call(body)
+    # VROOM 500 + an error code = a problem with the request (e.g. a job location off the
+    # road network -> "Unfound route"), not a server fault. Surface it as 422 so callers
+    # can tell "fix your input" from "engine down" — the message names the bad location.
+    if status >= 500 and isinstance(data, dict) and data.get("code"):
+        status = 422
+    return JSONResponse(data, status_code=status)

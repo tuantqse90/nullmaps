@@ -220,3 +220,68 @@ def test_directions_steps_english_when_language_en(monkeypatch):
                       "language": "en", "key": "secret"})
     step = r.json()["routes"][0]["legs"][0]["steps"][0]
     assert step["html_instructions"] == "Turn left onto Lê Thánh Tôn"
+
+
+# --- /v1/optimize (VROOM VRP) --------------------------------------------------
+def test_prep_optimize_defaults_profile_and_validates():
+    m = load()
+    body, err = m._prep_optimize({
+        "vehicles": [{"id": 1, "start": [106.70, 10.77]}, {"id": 2, "start": [106.70, 10.77], "profile": "auto"}],
+        "jobs": [{"id": 1, "location": [106.71, 10.78]}],
+    })
+    assert err is None
+    assert body["vehicles"][0]["profile"] == m.VROOM_PROFILE   # defaulted (motorbike-first)
+    assert body["vehicles"][1]["profile"] == "auto"            # caller override kept
+    # validation
+    assert m._prep_optimize({"jobs": [{"id": 1, "location": [1, 2]}]})[1]      # no vehicles
+    assert m._prep_optimize({"vehicles": [{"id": 1, "start": [1, 2]}]})[1]     # no jobs/shipments
+    assert m._prep_optimize([])[1]                                            # not an object
+
+
+def test_optimize_endpoint_proxies_vroom(monkeypatch):
+    m = load()
+    seen = {}
+
+    async def fake_vroom(body):
+        seen["body"] = body
+        return {"code": 0, "summary": {"cost": 1200, "routes": 2, "unassigned": 0},
+                "routes": [{"vehicle": 1, "steps": []}, {"vehicle": 2, "steps": []}],
+                "unassigned": []}, 200
+
+    monkeypatch.setattr(m, "vroom_call", fake_vroom)
+    c = TestClient(m.app)
+    r = c.post("/v1/optimize", params={"key": "secret"}, json={
+        "vehicles": [{"id": 1, "start": [106.70, 10.77]}, {"id": 2, "start": [106.70, 10.77]}],
+        "jobs": [{"id": 1, "location": [106.71, 10.78]}, {"id": 2, "location": [106.69, 10.79]}],
+    })
+    assert r.status_code == 200
+    b = r.json()
+    assert b["code"] == 0 and b["summary"]["routes"] == 2
+    assert seen["body"]["vehicles"][0]["profile"] == m.VROOM_PROFILE   # profile injected before proxy
+
+
+def test_optimize_rejects_bad_body():
+    m = load()
+    c = TestClient(m.app)
+    r = c.post("/v1/optimize", params={"key": "secret"}, json={"jobs": [{"id": 1, "location": [1, 2]}]})
+    assert r.status_code == 400 and r.json()["code"] == 1
+
+
+def test_optimize_requires_key():
+    m = load()
+    c = TestClient(m.app)
+    r = c.post("/v1/optimize", json={"vehicles": [{"id": 1, "start": [1, 2]}], "jobs": [{"id": 1, "location": [1, 2]}]})
+    assert r.status_code in (401, 403)
+
+
+def test_optimize_remaps_vroom_routing_error_to_422(monkeypatch):
+    m = load()
+
+    async def fake_vroom(body):  # VROOM "unfound route" = 500 + error code
+        return {"code": 2, "error": "Unfound route(s) from location [106.68,10.80]"}, 500
+
+    monkeypatch.setattr(m, "vroom_call", fake_vroom)
+    c = TestClient(m.app)
+    r = c.post("/v1/optimize", params={"key": "secret"}, json={
+        "vehicles": [{"id": 1, "start": [106.70, 10.77]}], "jobs": [{"id": 1, "location": [106.68, 10.80]}]})
+    assert r.status_code == 422 and "Unfound route" in r.json()["error"]   # bad input, not a 500

@@ -49,6 +49,42 @@ is fine. Seen here:
 **For callers:** snap to public arterials, or pass a `radius`/`search_filter` so Valhalla can pick a
 routable edge. This is why the Phase-4 adapter should geocode to routable points, not raw pins.
 
+## Multi-vehicle optimization (VRP) — VROOM
+
+Valhalla's `/optimized_route` solves a **single**-vehicle visit order (TSP). For **many stops
+across many vehicles** (delivery rounds, dispatch) NullMaps adds **VROOM** — it assigns jobs to
+vehicles and orders each route, honoring capacities, time windows and skills.
+
+- **Service:** `vroom` (`ghcr.io/vroom-project/vroom-docker`), internal-only, `mem_limit 512m`.
+- **Routing backend:** the **same Valhalla** graph — VROOM pulls its cost matrix from `valhalla:8002`
+  (config in `vroom-config.yml`; every profile points at the one instance, Valhalla picks the costing
+  per request). So a 1-line change to `vroom-config.yml` host is all that ties them together.
+- **Exposed via the adapter:** `POST /v1/optimize` (key-gated like all `/v1/*`). The adapter validates
+  the problem and defaults each vehicle's `profile` to `motor_scooter` (override per vehicle, or set
+  `VROOM_PROFILE`).
+
+### Request / response (VROOM format)
+
+Body = a [VROOM problem](https://github.com/VROOM-Project/vroom/blob/master/docs/API.md): `vehicles`
+(+ `jobs` and/or `shipments`). **Coordinates are `[lon, lat]`.**
+
+```bash
+curl -X POST "$BASE/v1/optimize?key=$API_KEY" -H 'Content-Type: application/json' -d '{
+  "vehicles": [
+    {"id": 1, "start": [106.700, 10.776], "end": [106.700, 10.776]},
+    {"id": 2, "start": [106.660, 10.762], "end": [106.660, 10.762]}
+  ],
+  "jobs": [
+    {"id": 1, "location": [106.693, 10.769], "service": 300},
+    {"id": 2, "location": [106.682, 10.800], "service": 300},
+    {"id": 3, "location": [106.715, 10.730], "service": 300}
+  ]
+}'
+```
+
+Returns the VROOM solution: `routes` (per-vehicle ordered `steps`), `summary` (cost/duration/…),
+and `unassigned`. Add `"options": {"g": true}` to the body for route geometry.
+
 ## When extending
 
 - Custom motorbike tuning (avoid highways, alley preferences) goes in the request costing options, or a
