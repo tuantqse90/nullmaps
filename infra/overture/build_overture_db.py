@@ -4,12 +4,13 @@
 What it produces
 ----------------
 `overture_vn.db` — a SQLite file with:
-  * `places(name, lon, lat, category, context, conf, folded)`  — ≈978k VN POIs
+  * `places(name, lon, lat, category, context, conf, folded, ward, province)` — ≈978k VN POIs
   * `places_fts`  — an FTS5 prefix index over the diacritic-folded name
 
 These are the cafés / shops / offices / clinics that OSM (and therefore Photon)
-mostly lack. The adapter mounts this read-only and merges prefix hits into its
-text-search results (see services/adapter/app/main.py `_overture_query`).
+mostly lack. `ward`/`province` are the authoritative 2025 admin names, point-in-polygon
+tagged from Overture Divisions. The adapter mounts this read-only and merges prefix
+hits into its text-search results (see services/adapter/app/main.py `_overture_query`).
 
 Why these filters
 -----------------
@@ -26,8 +27,9 @@ Usage
         RELEASE  default 2026-05-20.0
         OUT      default ./overture_vn.db
 
-Runs in ~10 min: ~9 min streaming the VN row-groups from S3 (public, no creds),
-~1 min folding + building the FTS index. Needs ~1 GB free disk.
+Runs in ~17 min: ~9 min streaming VN POIs from S3 (public, no creds), ~1 min folding +
+FTS, ~7 min loading division polygons + the ward/province spatial join. Needs ~1.5 GB
+free disk and the DuckDB spatial extension (auto-installed).
 """
 import os
 import sys
@@ -73,6 +75,53 @@ def extract(out: str) -> None:
     print(f"  extracted {n:,} VN places in {time.time()-t:.0f}s", flush=True)
 
 
+def enrich_admin(out: str) -> None:
+    """Point-in-polygon tag every POI with its 2025 ward + province, from Overture
+    Divisions (the `division_area` polygons: subtype 'locality' = phường/xã/đặc khu,
+    subtype 'region' = the 34 reformed provinces). A build-time bbox-prefiltered spatial
+    join; the adapter then shows '<street>, <ward>, <province>' as the secondary line.
+
+    Overture's freeform address tail often holds stale pre-2025 names, so we tag
+    authoritatively here rather than trusting it."""
+    import duckdb
+    da = f"s3://overturemaps-us-west-2/release/{RELEASE}/theme=divisions/type=division_area/*"
+    con = duckdb.connect()
+    con.execute("INSTALL httpfs;LOAD httpfs;INSTALL spatial;LOAD spatial;INSTALL sqlite;LOAD sqlite;")
+    con.execute("SET s3_region='us-west-2';SET http_timeout=300000;SET http_retries=10;SET http_keep_alive=true;")
+    t = time.time()
+    print("loading VN ward/province polygons...", flush=True)
+    for tbl, sub in (("wards", "locality"), ("regions", "region")):
+        con.execute(f"""CREATE TEMP TABLE {tbl} AS
+          SELECT names.primary AS name, geometry AS geom,
+                 ST_XMin(geometry) xmin, ST_XMax(geometry) xmax,
+                 ST_YMin(geometry) ymin, ST_YMax(geometry) ymax
+          FROM read_parquet('{da}') WHERE country='VN' AND subtype='{sub}'""")
+    con.execute(f"ATTACH '{out}' AS o (TYPE sqlite);")
+    con.execute("CREATE TEMP TABLE pts AS SELECT rowid AS rid, lon, lat FROM o.places;")
+    print(f"  polygons loaded [{time.time()-t:.0f}s]; spatial join...", flush=True)
+    # bbox BETWEEN prefilter makes ST_Contains test only the 1-3 candidate polygons/point
+    con.execute("""CREATE TEMP TABLE wmap AS SELECT p.rid, ANY_VALUE(w.name) AS ward
+      FROM pts p JOIN wards w ON p.lon BETWEEN w.xmin AND w.xmax AND p.lat BETWEEN w.ymin AND w.ymax
+        AND ST_Contains(w.geom, ST_Point(p.lon, p.lat)) GROUP BY p.rid;""")
+    con.execute("""CREATE TEMP TABLE rmap AS SELECT p.rid, ANY_VALUE(r.name) AS province
+      FROM pts p JOIN regions r ON p.lon BETWEEN r.xmin AND r.xmax AND p.lat BETWEEN r.ymin AND r.ymax
+        AND ST_Contains(r.geom, ST_Point(p.lon, p.lat)) GROUP BY p.rid;""")
+    rows = con.execute("""SELECT pts.rid, wmap.ward, rmap.province FROM pts
+      LEFT JOIN wmap ON wmap.rid=pts.rid LEFT JOIN rmap ON rmap.rid=pts.rid;""").fetchall()
+    con.close()
+    s = sqlite3.connect(out)
+    cols = [r[1] for r in s.execute("PRAGMA table_info(places)")]
+    if "ward" not in cols:
+        s.execute("ALTER TABLE places ADD COLUMN ward TEXT")
+    if "province" not in cols:
+        s.execute("ALTER TABLE places ADD COLUMN province TEXT")
+    s.executemany("UPDATE places SET ward=?, province=? WHERE rowid=?", [(r[1], r[2], r[0]) for r in rows])
+    s.commit()
+    s.close()
+    tagged = sum(1 for r in rows if r[1])
+    print(f"  tagged {tagged:,}/{len(rows):,} wards ({100*tagged//max(1,len(rows))}%) in {time.time()-t:.0f}s", flush=True)
+
+
 def build_index(out: str) -> None:
     con = sqlite3.connect(out)
     con.row_factory = sqlite3.Row
@@ -97,4 +146,5 @@ def build_index(out: str) -> None:
 if __name__ == "__main__":
     extract(OUT)
     build_index(OUT)
+    enrich_admin(OUT)   # PIP-tag 2025 ward + province
     print("done.", flush=True)

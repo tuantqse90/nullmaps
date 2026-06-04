@@ -11,15 +11,31 @@ business-name matches surface from Overture. See `services/adapter/app/main.py`
 
 ## What's in it
 
-`overture_vn.db` (SQLite, ≈170 MB):
+`overture_vn.db` (SQLite, ≈220 MB):
 
-| table        | purpose                                                          |
-|--------------|------------------------------------------------------------------|
-| `places`     | `name, lon, lat, category, context, conf, folded` (≈978k rows)   |
-| `places_fts` | FTS5 prefix index over `folded` (diacritic-folded name)          |
+| table        | purpose                                                                      |
+|--------------|------------------------------------------------------------------------------|
+| `places`     | `name, lon, lat, category, context, conf, folded, ward, province` (≈978k rows) |
+| `places_fts` | FTS5 prefix index over `folded` (diacritic-folded name)                      |
 
-`context` is the street address line shown as the autocomplete secondary text
-(e.g. `76A Đường Lê Lai`). `conf` is Overture's confidence ×100.
+`context` is Overture's freeform address; the adapter shows only its first segment
+(the street/house number, e.g. `76A Đường Lê Lai`) — the tail often carries **stale
+pre-2025 admin names**. `ward` + `province` are the **authoritative 2025 names**,
+point-in-polygon tagged from Overture Divisions (see below). `conf` is confidence ×100.
+
+The autocomplete secondary line is then `<street>, <ward>, <province>` — e.g.
+`76A Đường Lê Lai, Phường Bến Thành, Thành phố Hồ Chí Minh`.
+
+## 2025 admin tagging
+
+Vietnam's July-2025 reform abolished districts and went two-tier:
+**province (34) → ward/commune (≈3,300)**. The build tags every POI by point-in-polygon
+against Overture Divisions `division_area`:
+
+- `subtype='region'`  → the 34 reformed provinces (`Tỉnh …` / `Thành phố …`)
+- `subtype='locality'` → ≈3,387 wards (`Phường …` / `Xã …` / `Đặc khu …`)
+
+≈99 % of POIs get a ward; the rest are offshore/border points with no covering polygon.
 
 ## Build / refresh
 

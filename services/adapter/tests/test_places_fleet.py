@@ -204,16 +204,17 @@ def _build_overture_db(path):
     def fold(s):
         s = (s or "").replace("Đ", "D").replace("đ", "d")
         return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c)).lower().strip()
-    rows = [  # name, lat, lon, category, context, conf
-        ("Highlands Coffee", 10.780, 106.700, "cafe", "90 CMT8", 80),       # near HCMC
-        ("Highlands Coffee", 21.030, 105.850, "cafe", "Hà Nội", 90),        # far (Hanoi), higher conf
-        ("Kaldivie Coffee", 10.781, 106.701, "cafe", "76A Đường Lê Lai", 70),
-        ("Phở Hòa Pasteur", 10.790, 106.680, "restaurant", "260C Pasteur", 60),
+    rows = [  # name, lat, lon, category, context, conf, ward, province
+        ("Highlands Coffee", 10.780, 106.700, "cafe", "90 CMT8", 80, "Phường Bến Thành", "Thành phố Hồ Chí Minh"),
+        ("Highlands Coffee", 21.030, 105.850, "cafe", "Hà Nội", 90, "Phường Hoàn Kiếm", "Thành phố Hà Nội"),  # far, higher conf
+        ("Kaldivie Coffee", 10.781, 106.701, "cafe", "76A Đường Lê Lai", 70, "Phường Bến Thành", "Thành phố Hồ Chí Minh"),
+        # freeform tail carries STALE pre-2025 admin ("Tỉnh Kiên Giang") -> must be stripped
+        ("Phở Hòa Pasteur", 10.790, 106.680, "restaurant", "260C Pasteur, P. cũ, Tỉnh Kiên Giang", 60, "Phường Xuân Hòa", "Thành phố Hồ Chí Minh"),
     ]
     con = sqlite3.connect(path)
-    con.execute("CREATE TABLE places(name TEXT, lat REAL, lon REAL, category TEXT, context TEXT, conf INTEGER, folded TEXT)")
-    con.executemany("INSERT INTO places(name,lat,lon,category,context,conf,folded) VALUES (?,?,?,?,?,?,?)",
-                    [(n, la, lo, cat, ctx, cf, fold(n)) for (n, la, lo, cat, ctx, cf) in rows])
+    con.execute("CREATE TABLE places(name TEXT, lat REAL, lon REAL, category TEXT, context TEXT, conf INTEGER, folded TEXT, ward TEXT, province TEXT)")
+    con.executemany("INSERT INTO places(name,lat,lon,category,context,conf,folded,ward,province) VALUES (?,?,?,?,?,?,?,?,?)",
+                    [(n, la, lo, cat, ctx, cf, fold(n), w, pr) for (n, la, lo, cat, ctx, cf, w, pr) in rows])
     con.execute("CREATE VIRTUAL TABLE places_fts USING fts5(folded, content='places', content_rowid='rowid', tokenize='unicode61')")
     con.execute("INSERT INTO places_fts(rowid, folded) SELECT rowid, folded FROM places")
     con.commit()
@@ -240,19 +241,30 @@ def test_overture_query_prefix_and_diacritic_insensitive(tmp_path):
     # niche business OSM lacks; matched accent-insensitively by name prefix
     r = m._overture_query("kaldivie", 5, 10.78, 106.70)
     assert len(r) == 1 and r[0]["name"] == "Kaldivie Coffee"
-    assert r[0]["kind"] == "poi" and r[0]["extra"] == "76A Đường Lê Lai"
+    # extra = street + authoritative 2025 ward + province
+    assert r[0]["kind"] == "poi" and r[0]["extra"] == "76A Đường Lê Lai, Phường Bến Thành, Thành phố Hồ Chí Minh"
     # folded query "pho hoa" finds the diacritic'd "Phở Hòa Pasteur"
     assert m._overture_query("pho hoa", 5, 10.78, 106.70)[0]["name"] == "Phở Hòa Pasteur"
+
+
+def test_overture_extra_strips_stale_admin(tmp_path):
+    m = _load_overture(tmp_path)
+    # Phở Hòa's freeform tail "P. cũ, Tỉnh Kiên Giang" (pre-2025) must be dropped; the
+    # authoritative ward/province appended instead.
+    r = m._overture_query("pho hoa", 5, 10.78, 106.70)[0]
+    assert r["extra"] == "260C Pasteur, Phường Xuân Hòa, Thành phố Hồ Chí Minh"
+    assert "Kiên Giang" not in r["extra"]
+    assert r["region"] == "Thành phố Hồ Chí Minh" and r["district"] == "Phường Xuân Hòa"
 
 
 def test_overture_query_ranks_by_proximity_when_biased(tmp_path):
     m = _load_overture(tmp_path)
     # two Highlands: HCMC (near) vs Hanoi (far, higher conf). Bias near HCMC -> HCMC first.
     r = m._overture_query("highlands", 5, 10.78, 106.70)
-    assert len(r) == 2 and r[0]["extra"] == "90 CMT8"          # proximity beats conf
+    assert len(r) == 2 and r[0]["region"] == "Thành phố Hồ Chí Minh"   # proximity beats conf
     # no bias -> fall back to confidence (Hanoi, conf 90, wins)
     r2 = m._overture_query("highlands", 5, None, None)
-    assert r2[0]["extra"] == "Hà Nội"
+    assert r2[0]["region"] == "Thành phố Hà Nội"
 
 
 def test_overture_missing_db_returns_empty(tmp_path):

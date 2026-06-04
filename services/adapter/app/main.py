@@ -422,12 +422,13 @@ def _fold(s: str | None) -> str:
 
 _overture_conn: sqlite3.Connection | None = None
 _overture_ready = False
+_overture_has_admin = False   # whether the DB carries 2025 ward/province columns
 
 
 def _open_overture() -> sqlite3.Connection | None:
     """Lazily open the read-only Overture FTS DB. Missing/corrupt file -> None (the
     merge is then skipped). check_same_thread=False so asyncio.to_thread can reuse it."""
-    global _overture_conn, _overture_ready
+    global _overture_conn, _overture_ready, _overture_has_admin
     if _overture_ready:
         return _overture_conn
     _overture_ready = True
@@ -437,16 +438,29 @@ def _open_overture() -> sqlite3.Connection | None:
         con = sqlite3.connect(f"file:{OVERTURE_DB}?mode=ro", uri=True, check_same_thread=False)
         con.row_factory = sqlite3.Row
         con.execute("SELECT 1 FROM places_fts LIMIT 1")   # fail fast if the index is absent
+        cols = {r[1] for r in con.execute("PRAGMA table_info(places)")}
+        _overture_has_admin = {"ward", "province"} <= cols
         _overture_conn = con
     except Exception:
         _overture_conn = None
     return _overture_conn
 
 
+def _overture_extra(r) -> str:
+    """Secondary line: the street/landmark part of the address + the authoritative 2025
+    ward + province (point-in-polygon tagged at build time). Only the first comma-segment
+    of Overture's freeform address is kept — its tail often carries stale pre-2025 admin
+    names ('Tỉnh Kiên Giang') that contradict the current ward/province."""
+    street = (r["context"] or "").split(",")[0].strip()
+    ward = r["ward"] if _overture_has_admin else None
+    prov = r["province"] if _overture_has_admin else None
+    return ", ".join(dict.fromkeys(x for x in (street, ward, prov) if x))
+
+
 def _overture_query(q: str, limit: int, lat, lon) -> list[dict]:
     """FTS5 prefix search over Overture business POIs, ranked by name-prefix match then
     proximity (when a viewport bias is given) or Overture confidence. Returns internal
-    result dicts (kind='poi', `extra` = the street address line)."""
+    result dicts (kind='poi', `extra` = street + 2025 ward/province)."""
     con = _open_overture()
     if con is None:
         return []
@@ -456,9 +470,10 @@ def _overture_query(q: str, limit: int, lat, lon) -> list[dict]:
     if not toks:
         return []
     match = " ".join(f'"{t}"*' for t in toks)            # AND of per-token prefixes
+    admin = ", p.ward, p.province" if _overture_has_admin else ""
     try:
         rows = con.execute(
-            "SELECT p.name, p.lat, p.lon, p.category, p.context, p.conf "
+            f"SELECT p.name, p.lat, p.lon, p.category, p.context, p.conf{admin} "
             "FROM places_fts f JOIN places p ON p.rowid = f.rowid "
             "WHERE places_fts MATCH ? LIMIT 200", (match,)).fetchall()
     except Exception:
@@ -477,8 +492,9 @@ def _overture_query(q: str, limit: int, lat, lon) -> list[dict]:
         "name": r["name"], "lat": r["lat"], "lon": r["lon"],
         "kind": "poi", "category": r["category"] or "",
         "housenumber": None, "street": None, "city": None,
-        "district": None, "region": None,
-        "osm_id": "", "extra": r["context"] or "",
+        "district": (r["ward"] if _overture_has_admin else None),
+        "region": (r["province"] if _overture_has_admin else None),
+        "osm_id": "", "extra": _overture_extra(r),
     } for r in rows]
 
 
