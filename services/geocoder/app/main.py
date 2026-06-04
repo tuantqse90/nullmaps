@@ -94,7 +94,7 @@ def search(q: str, limit: int, bias: tuple[float, float] | None = None) -> list[
     if not match:
         return []
     rows = db().execute(
-        """SELECT f.osm_id, f.name, f.folded, f.kind, f.lat, f.lon, f.extra,
+        """SELECT f.id, f.osm_id, f.name, f.folded, f.kind, f.lat, f.lon, f.extra,
                   f.importance, f.category, f.housenumber, f.street, f.city,
                   f.district, f.region, bm25(features_fts) AS r
            FROM features_fts JOIN features f ON f.id = features_fts.rowid
@@ -104,6 +104,19 @@ def search(q: str, limit: int, bias: tuple[float, float] | None = None) -> list[
     ).fetchall()
     qn = normalize_query(fold(q))
     out = [dict(r) for r in rows]
+    # The bm25-ranked FTS window can omit the EXACT-name match when the query tokens are
+    # very common (e.g. "binh thanh" prefix-matches every "Thanh Bình" too), pushing a
+    # legacy district / exact place past the limit so it never reaches rank(). Pull exact
+    # folded matches in unconditionally — there are few, and they are the best answers.
+    seen = {x["id"] for x in out}
+    for r in db().execute(
+        """SELECT f.id, f.osm_id, f.name, f.folded, f.kind, f.lat, f.lon, f.extra,
+                  f.importance, f.category, f.housenumber, f.street, f.city,
+                  f.district, f.region, 0.0 AS r
+           FROM features f WHERE f.folded = ? LIMIT 50""", (qn,)).fetchall():
+        if r["id"] not in seen:
+            out.append(dict(r))
+            seen.add(r["id"])
     if not out and len(qn) >= 3:
         out = _trigram_fallback(qn, limit, bias)
         for x in out:
@@ -128,6 +141,7 @@ def search(q: str, limit: int, bias: tuple[float, float] | None = None) -> list[
 
     out.sort(key=rank)
     for x in out:
+        x.pop("id", None)
         x.pop("folded", None)
         x.pop("importance", None)
     return out[:limit]
