@@ -235,6 +235,55 @@ def test_avoid_zones_caps_by_point_count_not_chars():
     assert m.avoid_zones(Req({"avoid_zones": big})) == []   # dropped: > 10000 vertices
 
 
+def test_avoid_zones_non_dict_geojson_ignored():
+    m = load()
+
+    class Req:
+        def __init__(self, qp):
+            self.query_params = qp
+
+    assert m.avoid_zones(Req({"avoid_zones": "[1,2,3]"})) == []   # was AttributeError -> 500
+    assert m.avoid_zones(Req({"avoid_zones": "42"})) == []
+    assert m.avoid_zones(Req({"avoid_zones": '"str"'})) == []
+
+
+def test_costing_options_rejects_nonfinite():
+    m = load()
+
+    class Req:
+        def __init__(self, qp):
+            self.query_params = qp
+
+    assert m.costing_options(Req({"top_speed": "nan"}), "auto") == {}        # was nan -> 500 Valhalla
+    assert m.costing_options(Req({"use_ferry": "inf"}), "auto") == {}
+    assert m.costing_options(Req({"top_speed": "80"}), "auto") == {"auto": {"top_speed": 80.0}}
+
+
+def test_clean_text_strips_control_chars():
+    m = load()
+    assert m._clean_text("\x00abc") == "abc"
+    assert m._clean_text("ben\tthanh") == "ben\tthanh"
+    assert m._clean_text("Nguyễn Huệ 🚗") == "Nguyễn Huệ 🚗"     # unicode + emoji survive
+    assert m._clean_text(None) is None
+
+
+def test_geocode_and_autocomplete_nullbyte_no_500(monkeypatch):
+    m = load()
+    seen = {}
+
+    async def fake_geo(path, params):
+        seen[path] = params
+        return {"results": []}
+
+    monkeypatch.setattr(m, "geocoder", fake_geo)
+    c = TestClient(m.app)
+    r = c.get("/maps/api/geocode/json", params={"address": "\x00abc", "key": "secret"})
+    assert r.status_code == 200                                  # cleaned -> not a 5xx
+    assert seen["/geocode"]["q"] == "abc"                        # NUL stripped before the engine
+    r = c.get("/maps/api/place/autocomplete/json", params={"input": "\x00abc", "key": "secret"})
+    assert r.status_code == 200
+
+
 def test_route_reports_snapped_distance(monkeypatch):
     m = load()
 

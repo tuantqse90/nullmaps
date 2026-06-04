@@ -60,23 +60,32 @@ ROUTES = [
 # Bias for geocoding (HCMC center) — most queries above are southern.
 BIAS = "10.776,106.70"
 
+# Cloudflare (front of the prod gateway) 403s the default "Python-urllib" UA.
+UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+
 # ---- http --------------------------------------------------------------------
 
 
 def _get(base, key, path, params, timeout=30):
     q = dict(params); q["key"] = key
     url = base + path + "?" + urllib.parse.urlencode(q)
-    req = urllib.request.Request(url, headers={"X-API-Key": key})
-    try:
-        r = urllib.request.urlopen(req, timeout=timeout)
-        return r.status, json.loads(r.read())
-    except urllib.error.HTTPError as e:
+    last = (None, {})
+    for attempt in range(3):                     # absorb transient Cloudflare 403/timeout bursts
+        req = urllib.request.Request(url, headers={"X-API-Key": key, "User-Agent": UA})
         try:
-            return e.code, json.loads(e.read())
-        except Exception:
-            return e.code, {}
-    except Exception as e:
-        return None, {"_err": str(e)}
+            r = urllib.request.urlopen(req, timeout=timeout)
+            return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code == 403:                    # Cloudflare challenge, not the adapter
+                last = (403, {}); time.sleep(1 + attempt); continue
+            try:
+                return e.code, json.loads(e.read())
+            except Exception:
+                return e.code, {}
+        except Exception as e:
+            last = (None, {"_err": str(e)}); time.sleep(1 + attempt); continue
+    return last
 
 
 def haversine_km(a, b, c, d):

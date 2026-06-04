@@ -49,6 +49,10 @@ make bug-hunt-fe
 
 - BE scripts hit the **key-gated** `/maps`+`/v1` directly with `X-API-Key`; the FE
   smoke uses the **basic-auth** page + keyless `/app` proxy (`page.authenticate`).
+- The prod gateway is behind **Cloudflare**, which **403s the default `Python-urllib`
+  User-Agent** and throttles request bursts. The BE scripts send a browser UA and
+  retry transient 403/timeouts — if you still see flaky `403`/`no result`, raise
+  `NM_PACE`, or point `NM_BASE` at the internal adapter (no Cloudflare).
 - All `/app` traffic shares one injected key → one rate-limit bucket. Keep paces > 0
   and don't run the harness in a tight loop, or you'll get `OVER_QUERY_LIMIT` (429)
   that looks like a bug but isn't.

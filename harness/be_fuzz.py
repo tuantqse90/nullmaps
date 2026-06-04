@@ -49,6 +49,11 @@ BAD_INT = ["", "abc", "-1", "0", "1e9", "999999999999", "nan", "1.5", "-0"]
 
 VALID_LL = "10.7769,106.7009"
 
+# Cloudflare (in front of the prod gateway) 403s the default "Python-urllib" UA, so
+# send a browser-like one. Against a localhost/internal adapter this is harmless.
+UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+
 
 def cases():
     out = []
@@ -104,14 +109,20 @@ def fetch(base, key, path, params, timeout):
     q = dict(params)
     q["key"] = key
     url = base + path + "?" + urllib.parse.urlencode(q)
-    req = urllib.request.Request(url, headers={"X-API-Key": key})
-    try:
-        r = urllib.request.urlopen(req, timeout=timeout)
-        return r.status, r.read()
-    except urllib.error.HTTPError as e:
-        return e.code, e.read()
-    except Exception as e:                       # timeout / connection / etc.
-        return None, str(e).encode()
+    for attempt in range(3):                     # absorb transient Cloudflare 403/timeout bursts
+        req = urllib.request.Request(url, headers={"X-API-Key": key, "User-Agent": UA})
+        try:
+            r = urllib.request.urlopen(req, timeout=timeout)
+            return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            if e.code == 403:                    # Cloudflare bot challenge, not the adapter
+                time.sleep(1 + attempt); continue
+            return e.code, e.read()
+        except Exception as e:                   # timeout / connection
+            if attempt == 2:
+                return None, str(e).encode()
+            time.sleep(1 + attempt)
+    return None, b"(retries exhausted)"
 
 
 def check(status, body):
