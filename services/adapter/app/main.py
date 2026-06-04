@@ -420,8 +420,9 @@ async def photon_call(path: str, params: dict) -> dict | None:
     q = params.get("q")
     if not q:
         return {"results": []}
+    want = params.get("limit", 5)
     hn, street = _split_housenumber(q)          # search the street alone; re-attach hn below
-    pp = {"q": street, "limit": params.get("limit", 5)}
+    pp = {"q": street, "limit": want * 2 + 2}   # over-fetch so dedup still fills `want`
     if lat is not None and lon is not None:
         pp["lat"], pp["lon"] = lat, lon
     r = await app.state.http.get(f"{PHOTON_URL}/api", params=pp, timeout=8)
@@ -431,8 +432,14 @@ async def photon_call(path: str, params: dict) -> dict | None:
         for x in results:                       # '543 Đường Nguyễn Duy Trinh' on a plain street
             if x["kind"] == "street" and not any(c.isdigit() for c in (x["name"] or "")):
                 x["name"] = f"{hn} {x['name']}"   # baked into name; don't also set housenumber
-
-    return {"results": results}
+    # drop predictions the user can't tell apart (same name + same context line)
+    seen, deduped = set(), []
+    for x in results:
+        k = (x["name"], x["extra"])
+        if k not in seen:
+            seen.add(k)
+            deduped.append(x)
+    return {"results": deduped[:want]}
 
 
 async def geocoder(path: str, params: dict) -> dict:
