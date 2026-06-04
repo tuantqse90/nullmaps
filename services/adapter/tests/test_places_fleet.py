@@ -204,19 +204,23 @@ def _build_overture_db(path):
     def fold(s):
         s = (s or "").replace("Đ", "D").replace("đ", "d")
         return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c)).lower().strip()
-    rows = [  # name, lat, lon, category, context, conf, ward, province
-        ("Highlands Coffee", 10.780, 106.700, "cafe", "90 CMT8", 80, "Phường Bến Thành", "Thành phố Hồ Chí Minh"),
-        ("Highlands Coffee", 21.030, 105.850, "cafe", "Hà Nội", 90, "Phường Hoàn Kiếm", "Thành phố Hà Nội"),  # far, higher conf
-        ("Kaldivie Coffee", 10.781, 106.701, "cafe", "76A Đường Lê Lai", 70, "Phường Bến Thành", "Thành phố Hồ Chí Minh"),
+    rows = [  # name, lat, lon, category, context, conf, ward, province, phone, website, brand
+        ("Highlands Coffee", 10.780, 106.700, "cafe", "90 CMT8", 80, "Phường Bến Thành", "Thành phố Hồ Chí Minh", None, None, "Highlands Coffee"),
+        ("Highlands Coffee", 21.030, 105.850, "cafe", "Hà Nội", 90, "Phường Hoàn Kiếm", "Thành phố Hà Nội", None, None, "Highlands Coffee"),  # far, higher conf
+        ("Kaldivie Coffee", 10.781, 106.701, "cafe", "76A Đường Lê Lai", 70, "Phường Bến Thành", "Thành phố Hồ Chí Minh", "+84281234567", "https://kaldivie.vn", None),
         # freeform tail carries STALE pre-2025 admin ("Tỉnh Kiên Giang") -> must be stripped
-        ("Phở Hòa Pasteur", 10.790, 106.680, "restaurant", "260C Pasteur, P. cũ, Tỉnh Kiên Giang", 60, "Phường Xuân Hòa", "Thành phố Hồ Chí Minh"),
+        ("Phở Hòa Pasteur", 10.790, 106.680, "restaurant", "260C Pasteur, P. cũ, Tỉnh Kiên Giang", 60, "Phường Xuân Hòa", "Thành phố Hồ Chí Minh", None, None, None),
     ]
     con = sqlite3.connect(path)
-    con.execute("CREATE TABLE places(name TEXT, lat REAL, lon REAL, category TEXT, context TEXT, conf INTEGER, folded TEXT, ward TEXT, province TEXT)")
-    con.executemany("INSERT INTO places(name,lat,lon,category,context,conf,folded,ward,province) VALUES (?,?,?,?,?,?,?,?,?)",
-                    [(n, la, lo, cat, ctx, cf, fold(n), w, pr) for (n, la, lo, cat, ctx, cf, w, pr) in rows])
+    con.execute("CREATE TABLE places(name TEXT, lat REAL, lon REAL, category TEXT, context TEXT, conf INTEGER, "
+                "folded TEXT, ward TEXT, province TEXT, phone TEXT, website TEXT, social TEXT, brand TEXT, cats TEXT)")
+    con.executemany("INSERT INTO places(name,lat,lon,category,context,conf,folded,ward,province,phone,website,brand) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    [(n, la, lo, cat, ctx, cf, fold(n), w, pr, ph, web, br) for (n, la, lo, cat, ctx, cf, w, pr, ph, web, br) in rows])
     con.execute("CREATE VIRTUAL TABLE places_fts USING fts5(folded, content='places', content_rowid='rowid', tokenize='unicode61')")
     con.execute("INSERT INTO places_fts(rowid, folded) SELECT rowid, folded FROM places")
+    con.execute("CREATE VIRTUAL TABLE places_rtree USING rtree(id, minLon, maxLon, minLat, maxLat)")
+    con.execute("INSERT INTO places_rtree(id,minLon,maxLon,minLat,maxLat) SELECT rowid,lon,lon,lat,lat FROM places")
     con.commit()
     con.close()
 
@@ -267,7 +271,44 @@ def test_overture_query_ranks_by_proximity_when_biased(tmp_path):
     assert r2[0]["region"] == "Thành phố Hà Nội"
 
 
+def test_overture_place_id_and_detail(tmp_path):
+    m = _load_overture(tmp_path)
+    r = m._overture_query("kaldivie", 5, 10.78, 106.70)[0]
+    assert r["osm_id"].startswith("ov:")                       # synthetic place_id
+    assert r["phone"] == "+84281234567" and r["website"] == "https://kaldivie.vn"
+    d = m._overture_detail(r["osm_id"])                        # resolves back
+    assert d and d["name"] == "Kaldivie Coffee" and d["phone"] == "+84281234567"
+    assert m._overture_detail("ov:999999") is None             # missing rowid
+    assert m._overture_detail("N123") is None                  # not an Overture id
+
+
+def test_geo_result_surfaces_overture_metadata(tmp_path):
+    m = _load_overture(tmp_path)
+    r = m._overture_query("kaldivie", 5, 10.78, 106.70)[0]
+    g = m._geo_result(r)
+    assert g["place_id"].startswith("ov:")
+    assert g["formatted_phone_number"] == "+84281234567" and g["website"] == "https://kaldivie.vn"
+    # formatted_address uses extra (street + ward + province), not just name + admin
+    assert g["formatted_address"] == "Kaldivie Coffee, 76A Đường Lê Lai, Phường Bến Thành, Thành phố Hồ Chí Minh"
+
+
+def test_overture_nearby_category(tmp_path):
+    m = _load_overture(tmp_path)
+    # cafes within 5km of the HCMC point -> HCMC Highlands + Kaldivie (both cafe);
+    # the Hanoi Highlands (>1000km) and Phở Hòa (restaurant) excluded.
+    res = m._overture_nearby(10.78, 106.70, 5000, "cafe", None, 20)
+    names = [r["name"] for r in res]
+    assert "Kaldivie Coffee" in names and "Phở Hòa Pasteur" not in names
+    assert all(r["distance_m"] <= 5000 for r in res)
+    assert [r["distance_m"] for r in res] == sorted(r["distance_m"] for r in res)
+    assert res[0]["osm_id"].startswith("ov:")
+    # type=restaurant -> only the restaurant
+    rnames = [r["name"] for r in m._overture_nearby(10.78, 106.70, 20000, "restaurant", None, 20)]
+    assert "Phở Hòa Pasteur" in rnames and "Kaldivie Coffee" not in rnames
+
+
 def test_overture_missing_db_returns_empty(tmp_path):
     os.environ["OVERTURE_DB"] = str(tmp_path / "nope.db")
     m = load()
     assert m._overture_query("anything", 5, 10.78, 106.70) == []
+    assert m._overture_nearby(10.78, 106.70, 1500, "cafe", None, 20) == []

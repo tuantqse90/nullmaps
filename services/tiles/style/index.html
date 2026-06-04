@@ -149,7 +149,9 @@
 
     /* place popup with save actions */
     .pp b { display: block; margin-bottom: 6px; }
-    .ppacts { display: flex; gap: 4px; flex-wrap: wrap; }
+    .ppmeta { display: block; margin: 2px 0; color: var(--green); text-decoration: none; font-size: 12px; }
+    .ppmeta:hover { text-decoration: underline; }
+    .ppacts { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
     .ppacts button { border: 1px solid var(--panel-b); background: var(--field); border-radius: 8px; padding: 4px 7px;
       font-size: 12px; cursor: pointer; color: var(--ink); }
     .ppacts button:hover { border-color: var(--green); }
@@ -400,8 +402,10 @@
   function placeMarker(p) {
     clearMarkers();
     const m = new maplibregl.Marker({ element: pinEl("#00b260", "", false), anchor: "bottom" }).setLngLat([p.lng, p.lat]);
+    const tel = p.phone ? `<a class="ppmeta" href="tel:${esc(p.phone)}">📞 ${esc(p.phone)}</a>` : "";
+    const web = p.website ? `<a class="ppmeta" href="${esc(p.website)}" target="_blank" rel="noopener">🌐 Website</a>` : "";
     const pop = new maplibregl.Popup({ className: "ml-popup", offset: 34 }).setHTML(
-      `<div class="pp"><b>${esc(p.label || p.q || p.name || "Địa điểm")}</b><div class="ppacts">` +
+      `<div class="pp"><b>${esc(p.label || p.q || p.name || "Địa điểm")}</b>${tel}${web}<div class="ppacts">` +
       `<button data-s="home">🏠 Nhà</button><button data-s="work">💼 Cơ quan</button><button data-s="star">⭐ Lưu</button></div></div>`);
     m.setPopup(pop); m.addTo(map); markers.push(m);
     pop.on("open", () => {
@@ -499,7 +503,11 @@
   async function geocode(name) {
     const d = await api("/maps/api/geocode/json", { address: name, location: mapBias() });
     const g = d.results && d.results[0];
-    return g ? { lng: g.geometry.location.lng, lat: g.geometry.location.lat, label: g.formatted_address || g.name } : null;
+    return g ? {
+      lng: g.geometry.location.lng, lat: g.geometry.location.lat,
+      label: g.formatted_address || g.name, name: g.name,
+      phone: g.formatted_phone_number || null, website: g.website || null,
+    } : null;
   }
 
   // ---- search box (autocomplete + saved/recent home screen + save popup) ----

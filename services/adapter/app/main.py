@@ -423,12 +423,15 @@ def _fold(s: str | None) -> str:
 _overture_conn: sqlite3.Connection | None = None
 _overture_ready = False
 _overture_has_admin = False   # whether the DB carries 2025 ward/province columns
+_overture_cols: set = set()   # available `places` columns (metadata varies by build)
+# metadata columns surfaced into results / place-details when present in the DB
+_OV_META = ("phone", "website", "social", "brand", "cats")
 
 
 def _open_overture() -> sqlite3.Connection | None:
     """Lazily open the read-only Overture FTS DB. Missing/corrupt file -> None (the
     merge is then skipped). check_same_thread=False so asyncio.to_thread can reuse it."""
-    global _overture_conn, _overture_ready, _overture_has_admin
+    global _overture_conn, _overture_ready, _overture_has_admin, _overture_cols
     if _overture_ready:
         return _overture_conn
     _overture_ready = True
@@ -438,12 +441,21 @@ def _open_overture() -> sqlite3.Connection | None:
         con = sqlite3.connect(f"file:{OVERTURE_DB}?mode=ro", uri=True, check_same_thread=False)
         con.row_factory = sqlite3.Row
         con.execute("SELECT 1 FROM places_fts LIMIT 1")   # fail fast if the index is absent
-        cols = {r[1] for r in con.execute("PRAGMA table_info(places)")}
-        _overture_has_admin = {"ward", "province"} <= cols
+        _overture_cols = {r[1] for r in con.execute("PRAGMA table_info(places)")}
+        _overture_has_admin = {"ward", "province"} <= _overture_cols
         _overture_conn = con
     except Exception:
         _overture_conn = None
     return _overture_conn
+
+
+def _overture_select() -> str:
+    """Column list for a places row, including whatever admin/metadata this build has."""
+    cols = ["rowid", "name", "lat", "lon", "category", "context", "conf"]
+    if _overture_has_admin:
+        cols += ["ward", "province"]
+    cols += [c for c in _OV_META if c in _overture_cols]
+    return ", ".join(f"p.{c}" for c in cols)
 
 
 def _overture_extra(r) -> str:
@@ -457,10 +469,26 @@ def _overture_extra(r) -> str:
     return ", ".join(dict.fromkeys(x for x in (street, ward, prov) if x))
 
 
+def _overture_row_to_dict(r) -> dict:
+    """Map one Overture `places` row onto the internal result dict. place_id is
+    'ov:<rowid>' so place-details can resolve it back (see _overture_detail)."""
+    keys = r.keys()
+    g = lambda c: (r[c] if c in keys else None)
+    return {
+        "name": r["name"], "lat": r["lat"], "lon": r["lon"],
+        "kind": "poi", "category": r["category"] or "",
+        "housenumber": None, "street": None, "city": None,
+        "district": (r["ward"] if _overture_has_admin else None),
+        "region": (r["province"] if _overture_has_admin else None),
+        "osm_id": f"ov:{r['rowid']}", "extra": _overture_extra(r),
+        "phone": g("phone"), "website": g("website"),
+        "social": g("social"), "brand": g("brand"), "cats": g("cats"),
+    }
+
+
 def _overture_query(q: str, limit: int, lat, lon) -> list[dict]:
     """FTS5 prefix search over Overture business POIs, ranked by name-prefix match then
-    proximity (when a viewport bias is given) or Overture confidence. Returns internal
-    result dicts (kind='poi', `extra` = street + 2025 ward/province)."""
+    proximity (when a viewport bias is given) or Overture confidence."""
     con = _open_overture()
     if con is None:
         return []
@@ -470,10 +498,9 @@ def _overture_query(q: str, limit: int, lat, lon) -> list[dict]:
     if not toks:
         return []
     match = " ".join(f'"{t}"*' for t in toks)            # AND of per-token prefixes
-    admin = ", p.ward, p.province" if _overture_has_admin else ""
     try:
         rows = con.execute(
-            f"SELECT p.name, p.lat, p.lon, p.category, p.context, p.conf{admin} "
+            f"SELECT {_overture_select()} "
             "FROM places_fts f JOIN places p ON p.rowid = f.rowid "
             "WHERE places_fts MATCH ? LIMIT 200", (match,)).fetchall()
     except Exception:
@@ -487,15 +514,23 @@ def _overture_query(q: str, limit: int, lat, lon) -> list[dict]:
             return (starts, haversine_m(lat, lon, r["lat"], r["lon"]))
         return (starts, -(r["conf"] or 0))
 
-    rows = sorted(rows, key=score)[:max(1, limit)]
-    return [{
-        "name": r["name"], "lat": r["lat"], "lon": r["lon"],
-        "kind": "poi", "category": r["category"] or "",
-        "housenumber": None, "street": None, "city": None,
-        "district": (r["ward"] if _overture_has_admin else None),
-        "region": (r["province"] if _overture_has_admin else None),
-        "osm_id": "", "extra": _overture_extra(r),
-    } for r in rows]
+    return [_overture_row_to_dict(r) for r in sorted(rows, key=score)[:max(1, limit)]]
+
+
+def _overture_detail(pid: str) -> dict | None:
+    """Resolve a 'ov:<rowid>' place_id back to its full Overture record (for Place Details)."""
+    con = _open_overture()
+    if con is None or not pid.startswith("ov:"):
+        return None
+    try:
+        rid = int(pid[3:])
+    except ValueError:
+        return None
+    try:
+        r = con.execute(f"SELECT {_overture_select()} FROM places p WHERE p.rowid = ?", (rid,)).fetchone()
+    except Exception:
+        return None
+    return _overture_row_to_dict(r) if r else None
 
 
 async def overture_search(q: str, limit: int, lat, lon) -> list[dict]:
@@ -503,6 +538,74 @@ async def overture_search(q: str, limit: int, lat, lon) -> list[dict]:
     if not q:
         return []
     return await asyncio.to_thread(_overture_query, q, limit, lat, lon)
+
+
+# Google nearby `type` -> Overture category keyword(s), matched (substring) against the
+# place's primary category and `cats` (alternate categories).
+_NEARBY_CATS = {
+    "restaurant": ("restaurant", "food", "eatery", "diner", "bbq", "noodle", "pho", "bun", "grill"),
+    "food": ("restaurant", "food", "eatery", "street_food"),
+    "cafe": ("coffee", "cafe", "tea", "bubble_tea", "dessert"),
+    "fuel": ("fuel", "gas_station", "petrol", "charging_station"),
+    "gas_station": ("fuel", "gas_station", "petrol"),
+    "bank": ("bank", "atm", "financial"),
+    "atm": ("atm", "bank"),
+    "pharmacy": ("pharmacy", "drugstore", "chemist"),
+    "hospital": ("hospital", "clinic", "medical", "doctor", "health", "dentist"),
+    "hotel": ("hotel", "accommodation", "motel", "hostel", "resort", "guest_house"),
+    "lodging": ("hotel", "accommodation", "motel", "hostel", "resort"),
+    "marketplace": ("market", "grocery", "supermarket", "convenience", "mart"),
+    "supermarket": ("supermarket", "grocery", "convenience", "mart"),
+    "store": ("store", "shop", "retail"),
+    "school": ("school", "education", "university", "college", "kindergarten"),
+    "parking": ("parking",),
+}
+
+
+def _overture_nearby(lat, lon, radius_m, gtype, keyword, limit) -> list[dict]:
+    """Nearby POIs from Overture (≈1.5M, more than OSM): R*Tree radius-box prefilter,
+    optional Google-type category filter + free-text keyword, refined to a true circle
+    and sorted by distance."""
+    con = _open_overture()
+    if con is None:
+        return []
+    dlat = radius_m / 111320.0                                   # metres -> degrees
+    dlon = radius_m / (111320.0 * max(0.2, math.cos(math.radians(lat))))
+    sql = (f"SELECT {_overture_select()} FROM places_rtree x JOIN places p ON p.rowid = x.id "
+           "WHERE x.minLat <= ? AND x.maxLat >= ? AND x.minLon <= ? AND x.maxLon >= ?")
+    args = [lat + dlat, lat - dlat, lon + dlon, lon - dlon]
+    kws = _NEARBY_CATS.get((gtype or "").lower())
+    if kws:
+        ors = []
+        for kw in kws:
+            ors.append("p.category LIKE ?"); args.append(f"%{kw}%")
+            if "cats" in _overture_cols:
+                ors.append("p.cats LIKE ?"); args.append(f"%{kw}%")
+        sql += " AND (" + " OR ".join(ors) + ")"
+    if keyword:
+        sql += " AND p.folded LIKE ?"; args.append(f"%{_fold(keyword)}%")
+    try:
+        rows = con.execute(sql + " LIMIT 800", args).fetchall()
+    except Exception:
+        return []
+    out = []
+    for r in rows:
+        if r["lat"] is None:
+            continue
+        d = haversine_m(lat, lon, r["lat"], r["lon"])
+        if d <= radius_m:
+            item = _overture_row_to_dict(r)
+            item["distance_m"] = round(d)
+            # primary-category hits rank above alt-category (`cats`) hits, then by distance,
+            # so an exact 'pharmacy' beats a place merely tagged pharmacy in alternates.
+            item["_pri"] = 0 if (kws and any(kw in (r["category"] or "").lower() for kw in kws)) else 1
+            out.append(item)
+    out.sort(key=lambda x: (x.pop("_pri"), x["distance_m"]))
+    return out[:max(1, limit)]
+
+
+async def overture_nearby(lat, lon, radius_m, gtype, keyword, limit) -> list[dict]:
+    return await asyncio.to_thread(_overture_nearby, lat, lon, radius_m, gtype, keyword, limit)
 
 
 async def photon_call(path: str, params: dict) -> dict | None:
@@ -891,15 +994,30 @@ def _formatted(r: dict) -> str:
 
 
 def _geo_result(r: dict) -> dict:
-    return {
-        "formatted_address": _formatted(r),
+    pid = r.get("osm_id", "")
+    # Overture POIs carry no structured house-number/street, but `extra` already holds
+    # 'street, ward, province' — use it so the formatted address isn't just name+admin.
+    if pid.startswith("ov:") and r.get("extra"):
+        formatted = ", ".join(filter(None, [r.get("name"), r.get("extra")]))
+    else:
+        formatted = _formatted(r)
+    out = {
+        "formatted_address": formatted,
         "geometry": {"location": {"lat": r["lat"], "lng": r["lon"]},
                      "location_type": "APPROXIMATE"},
         "types": _feature_types(r.get("kind", "")),
-        "place_id": r.get("osm_id", ""),
+        "place_id": pid,
         "name": r.get("name"),
         "address_components": _address_components(r),
     }
+    # Overture metadata (phone/website/brand) surfaced in Google Place-Details shape
+    if r.get("phone"):
+        out["formatted_phone_number"] = r["phone"]
+    if r.get("website"):
+        out["website"] = r["website"]
+    if r.get("brand"):
+        out["brand"] = r["brand"]
+    return out
 
 
 @app.get("/maps/api/geocode/json")
@@ -929,22 +1047,47 @@ async def geocode(request: Request):
     return {"status": "OK", "results": [_geo_result(r) for r in results]}
 
 
+def _nearby_vicinity(r: dict) -> str:
+    """Overture rows carry no structured street; use their `extra` (street+ward+province)."""
+    if r.get("osm_id", "").startswith("ov:") and r.get("extra"):
+        return r["extra"]
+    return _formatted(r)
+
+
 @app.get("/maps/api/place/nearbysearch/json")
 async def nearbysearch(request: Request):
-    """Google Nearby Search. ?location=lat,lng&radius=&type=<category>&keyword=<text>."""
+    """Google Nearby Search. ?location=lat,lng&radius=&type=<category>&keyword=<text>.
+
+    Overture (≈1.5M business POIs) is the primary source; the OSM/SQLite geocoder's
+    nearby results are appended deduped (it has some POIs Overture lacks)."""
     require_key(request)
     loc = request.query_params.get("location")
     if not loc:
         return JSONResponse({"status": "INVALID_REQUEST", "results": []}, status_code=400)
     b = parse_latlng(loc)
-    params = {"lat": b["lat"], "lon": b["lon"],
-              "radius": request.query_params.get("radius", "1500")}
-    if request.query_params.get("type"):
-        params["category"] = request.query_params["type"]
-    if request.query_params.get("keyword"):
-        params["q"] = _clean_text(request.query_params["keyword"])
-    data = await geocoder("/nearby", params)
-    res = data.get("results", [])
+    try:
+        radius = max(1.0, min(50000.0, float(request.query_params.get("radius", "1500"))))
+    except (TypeError, ValueError):
+        radius = 1500.0
+    gtype = request.query_params.get("type")
+    keyword = _clean_text(request.query_params.get("keyword"))
+    limit = 20
+    ov = await overture_nearby(b["lat"], b["lon"], radius, gtype, keyword, limit)
+    # SQLite geocoder nearby (OSM) — append the ones Overture didn't already cover
+    params = {"lat": b["lat"], "lon": b["lon"], "radius": str(int(radius))}
+    if gtype:
+        params["category"] = gtype
+    if keyword:
+        params["q"] = keyword
+    try:
+        s_res = (await geocoder("/nearby", params)).get("results", [])
+    except Exception:
+        s_res = []
+    key = lambda r: (_fold(r.get("name")), round(r.get("lat") or 0, 4))
+    seen = {key(r) for r in ov}
+    res = ov + [r for r in s_res if key(r) not in seen]
+    res.sort(key=lambda r: r.get("distance_m") if r.get("distance_m") is not None else 9e9)
+    res = res[:limit]
     return {
         "status": "OK" if res else "ZERO_RESULTS",
         "results": [{
@@ -952,7 +1095,7 @@ async def nearbysearch(request: Request):
             "place_id": r.get("osm_id", ""),
             "geometry": {"location": {"lat": r["lat"], "lng": r["lon"]}},
             "types": _feature_types(r.get("kind", "")),
-            "vicinity": _formatted(r),
+            "vicinity": _nearby_vicinity(r),
             "category": r.get("category"),
             "distance_m": r.get("distance_m"),
         } for r in res],
@@ -961,11 +1104,14 @@ async def nearbysearch(request: Request):
 
 @app.get("/maps/api/place/details/json")
 async def place_details(request: Request):
-    """Google Place Details. ?place_id=<osm_id>."""
+    """Google Place Details. ?place_id=<osm_id> ('ov:<rowid>' -> Overture POI w/ phone/website)."""
     require_key(request)
     pid = request.query_params.get("place_id")
     if not pid:
         return JSONResponse({"status": "INVALID_REQUEST", "result": {}}, status_code=400)
+    if pid.startswith("ov:"):                       # Overture business POI
+        r = await asyncio.to_thread(_overture_detail, pid)
+        return {"status": "OK", "result": _geo_result(r)} if r else {"status": "NOT_FOUND", "result": {}}
     data = await geocoder("/detail", {"osm_id": pid})
     r = data.get("result")
     if not r:
