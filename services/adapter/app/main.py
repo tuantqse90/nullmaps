@@ -372,7 +372,9 @@ def _photon_feature(f: dict) -> dict:
     c = (f.get("geometry") or {}).get("coordinates") or [None, None]
     name = p.get("name") or " ".join(filter(None, [p.get("housenumber"), p.get("street")])) \
         or p.get("city") or p.get("district") or ""
-    ctx = ", ".join(dict.fromkeys(x for x in (p.get("district"), p.get("city"), p.get("state")) if x))
+    # secondary context: street (distinguishes branches in the same ward) + district + city
+    ctx_src = (p.get("street") if p.get("name") else None, p.get("district"), p.get("city"))
+    ctx = ", ".join(dict.fromkeys(x for x in ctx_src if x))
     return {
         "name": name, "lat": c[1], "lon": c[0],
         "kind": _photon_kind(p), "category": p.get("osm_value") or "",
