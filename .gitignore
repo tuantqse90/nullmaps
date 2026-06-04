@@ -41,3 +41,6 @@ harness/node_modules/
 harness/package.json
 harness/package-lock.json
 harness/*.png
+
+# Photon search index (downloaded, ~0.5-1GB)
+services/geocoder-photon/data/

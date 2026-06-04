@@ -96,6 +96,28 @@ services:
       retries: 3
       start_period: 15s
 
+  # --- Photon: prominence-ranked typeahead geocoder (OpenSearch-backed) -----
+  # Serves the prebuilt Vietnam dump (first run downloads + unpacks the index).
+  # The adapter prefers it for text search (autocomplete/geocode/reverse) and
+  # falls back to the lightweight SQLite `geocoder` (which also still serves
+  # nearby-by-category + place-details). Switch off with SEARCH_ENGINE=sqlite.
+  photon:
+    build: ./services/geocoder-photon
+    expose:
+      - "2322"
+    volumes:
+      - ./services/geocoder-photon/data:/photon
+    environment:
+      - JAVA_OPTS=-Xmx1g
+    restart: unless-stopped
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:2322/api?q=hcm&limit=1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+
   # --- Phase 4: Google/Goong-compat FastAPI adapter ------------------------
   # Live: directions + distancematrix -> Valhalla; geocode/reverse/autocomplete/
   # nearby/details -> geocoder; /v1/isochrone + /v1/snap native. All engines up.
@@ -108,6 +130,8 @@ services:
       - MARTIN_URL=http://martin:3000
       - VALHALLA_URL=http://valhalla:8002
       - GEOCODER_URL=http://geocoder:2322
+      - PHOTON_URL=http://photon:2322
+      - SEARCH_ENGINE=${SEARCH_ENGINE:-photon}
       - NORMALIZER_URL=http://normalizer:8100
     depends_on:
       - valhalla

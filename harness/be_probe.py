@@ -34,16 +34,18 @@ import urllib.request
 
 # Geocode: (query, expected_lat, expected_lon, tolerance_km). Tolerances are loose
 # — we only care that it lands in the right city/area, not the exact rooftop.
+# (query, expected_lat, expected_lon, tol_km, bias "lat,lon" | None = default HCMC).
+# Bias mirrors the app's viewport — a Hà Nội query is run while viewing Hà Nội.
 GEOCODE = [
-    ("543 Nguyễn Duy Trinh P Bình Trưng Đông", 10.79, 106.78, 6),   # was Bình Phước (~90km)
-    ("Nguyễn Duy Trinh", 10.79, 106.78, 8),                          # bare street, biased
-    ("bình thạnh", 10.81, 106.71, 6),                                # legacy district, not central VN
-    ("q1", 10.776, 106.701, 5),
-    ("gò vấp", 10.838, 106.665, 6),
-    ("hoàn kiếm", 21.03, 105.85, 6),                                 # Hà Nội
-    ("nguyn hue", 10.775, 106.70, 6),                                # typo tolerance
-    ("Bến Thành", 10.77, 106.70, 6),
-    ("sân bay Tân Sơn Nhất", 10.818, 106.657, 6),
+    ("543 Nguyễn Duy Trinh P Bình Trưng Đông", 10.79, 106.78, 6, None),   # was Bình Phước (~90km)
+    ("Nguyễn Duy Trinh", 10.79, 106.78, 8, None),                         # bare street, biased
+    ("bình thạnh", 10.81, 106.71, 6, None),                               # legacy district, not central VN
+    ("q1", 10.776, 106.701, 5, None),
+    ("gò vấp", 10.838, 106.665, 6, None),
+    ("hoàn kiếm", 21.03, 105.85, 7, "21.03,105.85"),                      # Hà Nội (biased to the region)
+    ("nguyen hue", 10.775, 106.70, 6, None),                              # diacritic-insensitive input
+    ("Bến Thành", 10.77, 106.70, 6, None),
+    ("sân bay Tân Sơn Nhất", 10.818, 106.657, 6, None),
 ]
 
 # Routes that MUST return OK. origin/destination are place names (geocoded) or
@@ -96,8 +98,8 @@ def haversine_km(a, b, c, d):
     return 2 * R * math.asin(math.sqrt(h))
 
 
-def geocode(base, key, q):
-    _, d = _get(base, key, "/maps/api/geocode/json", {"address": q, "location": BIAS})
+def geocode(base, key, q, bias=None):
+    _, d = _get(base, key, "/maps/api/geocode/json", {"address": q, "location": bias or BIAS})
     r = (d.get("results") or [None])[0]
     if not r:
         return None
@@ -116,8 +118,8 @@ def main():
     fails = []
 
     print("## geocode accuracy")
-    for q, elat, elon, tol in GEOCODE:
-        g = geocode(base, key, q)
+    for q, elat, elon, tol, bias in GEOCODE:
+        g = geocode(base, key, q, bias)
         time.sleep(args.pace)
         if not g:
             fails.append(("geocode", q, "ZERO_RESULTS"))
