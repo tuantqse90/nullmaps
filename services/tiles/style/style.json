@@ -8,7 +8,7 @@
   "sources": {
     "vn": {
       "type": "vector",
-      "url": "/tiles/vietnam"
+      "url": "/tiles/vietnam?v=z16"
     },
     "sovereignty": {
       "type": "geojson",

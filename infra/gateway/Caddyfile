@@ -59,9 +59,10 @@
 	}
 
 	# Style JSON: short cache so edits land fast.
+	# Style JSON: short cache so edits (layers, source version) land fast.
 	@style path /style.json /style-dark.json /style-terrain.json
 	handle @style {
-		header Cache-Control "public, max-age=3600"
+		header Cache-Control "public, max-age=300"
 		reverse_proxy demo:80
 	}
 
