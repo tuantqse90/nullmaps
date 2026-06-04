@@ -18,11 +18,14 @@ Pass it Google-style as ?key=... or as an X-API-Key header.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import os
 import re
+import sqlite3
 import time
+import unicodedata
 from collections import defaultdict
 from contextlib import asynccontextmanager
 
@@ -91,6 +94,9 @@ PHOTON_URL = os.environ.get("PHOTON_URL", "http://photon:2322").rstrip("/")
 # on error/empty) or "sqlite" (the lightweight engine only). nearby/details always
 # use the SQLite geocoder (Photon has no category-nearby / by-id lookup here).
 SEARCH_ENGINE = os.environ.get("SEARCH_ENGINE", "photon").lower()
+# Overture Maps VN business POIs (SQLite FTS index, ≈978k cafés/shops/offices that
+# OSM/Photon lack). Merged into Photon text-search results. Empty/missing = skipped.
+OVERTURE_DB = os.environ.get("OVERTURE_DB", "/data/overture_vn.db")
 NORMALIZER_URL = os.environ.get("NORMALIZER_URL", "").rstrip("/")
 
 # Google travel modes / Goong vehicle -> Valhalla costing. Motorbike-first: an
@@ -407,6 +413,82 @@ def _split_housenumber(q: str):
     return (m.group(1), m.group(2).strip()) if m else (None, q)
 
 
+def _fold(s: str | None) -> str:
+    """Diacritic-fold + lowercase for accent-insensitive matching (Đ/đ -> d), matching
+    the fold baked into the Overture FTS index at build time."""
+    s = (s or "").replace("Đ", "D").replace("đ", "d")
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c)).lower().strip()
+
+
+_overture_conn: sqlite3.Connection | None = None
+_overture_ready = False
+
+
+def _open_overture() -> sqlite3.Connection | None:
+    """Lazily open the read-only Overture FTS DB. Missing/corrupt file -> None (the
+    merge is then skipped). check_same_thread=False so asyncio.to_thread can reuse it."""
+    global _overture_conn, _overture_ready
+    if _overture_ready:
+        return _overture_conn
+    _overture_ready = True
+    if not os.path.exists(OVERTURE_DB):
+        return None
+    try:
+        con = sqlite3.connect(f"file:{OVERTURE_DB}?mode=ro", uri=True, check_same_thread=False)
+        con.row_factory = sqlite3.Row
+        con.execute("SELECT 1 FROM places_fts LIMIT 1")   # fail fast if the index is absent
+        _overture_conn = con
+    except Exception:
+        _overture_conn = None
+    return _overture_conn
+
+
+def _overture_query(q: str, limit: int, lat, lon) -> list[dict]:
+    """FTS5 prefix search over Overture business POIs, ranked by name-prefix match then
+    proximity (when a viewport bias is given) or Overture confidence. Returns internal
+    result dicts (kind='poi', `extra` = the street address line)."""
+    con = _open_overture()
+    if con is None:
+        return []
+    folded = _fold(q)
+    toks = [re.sub(r"[^a-z0-9]", "", t) for t in folded.split()]
+    toks = [t for t in toks if t]
+    if not toks:
+        return []
+    match = " ".join(f'"{t}"*' for t in toks)            # AND of per-token prefixes
+    try:
+        rows = con.execute(
+            "SELECT p.name, p.lat, p.lon, p.category, p.context, p.conf "
+            "FROM places_fts f JOIN places p ON p.rowid = f.rowid "
+            "WHERE places_fts MATCH ? LIMIT 200", (match,)).fetchall()
+    except Exception:
+        return []
+    biased = lat is not None and lon is not None
+
+    def score(r):
+        nf = _fold(r["name"])
+        starts = 0 if nf.startswith(folded) else (1 if folded in nf else 2)
+        if biased and r["lat"] is not None:
+            return (starts, haversine_m(lat, lon, r["lat"], r["lon"]))
+        return (starts, -(r["conf"] or 0))
+
+    rows = sorted(rows, key=score)[:max(1, limit)]
+    return [{
+        "name": r["name"], "lat": r["lat"], "lon": r["lon"],
+        "kind": "poi", "category": r["category"] or "",
+        "housenumber": None, "street": None, "city": None,
+        "district": None, "region": None,
+        "osm_id": "", "extra": r["context"] or "",
+    } for r in rows]
+
+
+async def overture_search(q: str, limit: int, lat, lon) -> list[dict]:
+    """Async wrapper — runs the (fast, <10ms) sync SQLite FTS off the event loop."""
+    if not q:
+        return []
+    return await asyncio.to_thread(_overture_query, q, limit, lat, lon)
+
+
 async def photon_call(path: str, params: dict) -> dict | None:
     """Run a geocoder-style call (/geocode, /autocomplete, /reverse) against Photon."""
     lat, lon = params.get("lat"), params.get("lon")
@@ -474,6 +556,19 @@ async def geocoder(path: str, params: dict) -> dict:
                     keyf = lambda x: (x.get("name"), round(x.get("lat") or 0, 4))
                     seen = {keyf(x) for x in s_items}
                     p_items = s_items + [x for x in p_items if keyf(x) not in seen]
+            # Overture business POIs (≈978k cafés/shops/offices OSM/Photon lack). Merge
+            # the unique ones in: Photon prefix-matches stay on top, then exact Overture
+            # business-name hits, then the two weaker tails — so a real business isn't
+            # buried under Photon's fuzzy filler, and street queries keep Photon first.
+            o_items = await overture_search(q, params.get("limit", 5), params.get("lat"), params.get("lon"))
+            if o_items:
+                fq = _fold(q)
+                okey = lambda x: (_fold(x.get("name")), round(x.get("lat") or 0, 3))
+                seen = {okey(x) for x in p_items}
+                o_uniq = [x for x in o_items if okey(x) not in seen]
+                starts = lambda x: _fold(x.get("name")).startswith(fq)
+                p_items = ([x for x in p_items if starts(x)] + [x for x in o_uniq if starts(x)]
+                           + [x for x in p_items if not starts(x)] + [x for x in o_uniq if not starts(x)])
             if p_items:
                 res = {"results": p_items[:params.get("limit", 5)]}
                 _geo_cache[key] = res

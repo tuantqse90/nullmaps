@@ -132,13 +132,18 @@ services:
       - GEOCODER_URL=http://geocoder:2322
       - PHOTON_URL=http://photon:2322
       - SEARCH_ENGINE=${SEARCH_ENGINE:-photon}
+      - OVERTURE_DB=/data/overture_vn.db
       - NORMALIZER_URL=http://normalizer:8100
+    volumes:
+      # Overture Maps VN POIs (≈978k businesses) — read-only FTS index the adapter
+      # merges into Photon results. Absent locally = gracefully skipped (see main.py).
+      - ./data:/data:ro
     depends_on:
       - valhalla
       - geocoder
       - normalizer
     restart: unless-stopped
-    mem_limit: 256m
+    mem_limit: 320m
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else sys.exit(1)"]
       interval: 30s
