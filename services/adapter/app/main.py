@@ -422,8 +422,8 @@ async def photon_call(path: str, params: dict) -> dict | None:
     if hn:
         for x in results:                       # '543 Đường Nguyễn Duy Trinh' on a plain street
             if x["kind"] == "street" and not any(c.isdigit() for c in (x["name"] or "")):
-                x["name"] = f"{hn} {x['name']}"
-                x["housenumber"] = hn
+                x["name"] = f"{hn} {x['name']}"   # baked into name; don't also set housenumber
+
     return {"results": results}
 
 
