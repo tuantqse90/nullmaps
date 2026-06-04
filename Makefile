@@ -58,6 +58,7 @@ tiles: $(PBF) sources ## Build Vietnam PMTiles from the extract via Planetiler
 	  ghcr.io/onthegomap/planetiler:latest \
 	  --osm-path=/data/raw/vietnam-latest.osm.pbf \
 	  --download \
+	  --maxzoom=16 \
 	  --output=/data/$(PMTILES_FILE) \
 	  --force
 	@echo ">> Done. Tiles at $(DATA_DIR)/$(PMTILES_FILE)"

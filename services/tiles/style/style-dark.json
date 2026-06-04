@@ -187,6 +187,24 @@
       "maxzoom": 15.0
     },
     {
+      "id": "housenumber",
+      "type": "symbol",
+      "source": "vn",
+      "source-layer": "housenumber",
+      "minzoom": 17,
+      "layout": {
+        "text-field": ["get", "housenumber"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": 10,
+        "text-padding": 2
+      },
+      "paint": {
+        "text-color": "#97a0ab",
+        "text-halo-color": "rgba(26,29,33,0.85)",
+        "text-halo-width": 1
+      }
+    },
+    {
       "id": "building-3d",
       "type": "fill-extrusion",
       "source": "vn",
