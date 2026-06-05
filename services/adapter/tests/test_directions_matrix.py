@@ -285,3 +285,45 @@ def test_optimize_remaps_vroom_routing_error_to_422(monkeypatch):
     r = c.post("/v1/optimize", params={"key": "secret"}, json={
         "vehicles": [{"id": 1, "start": [106.70, 10.77]}], "jobs": [{"id": 1, "location": [106.68, 10.80]}]})
     assert r.status_code == 422 and "Unfound route" in r.json()["error"]   # bad input, not a 500
+
+
+# --- /v1/speed_limit -----------------------------------------------------------
+async def fake_trace_attrs(path, payload):
+    return {"edges": [
+        {"names": ["Lê Lai"], "speed_limit": None, "speed": 57, "length": 0.10, "road_class": "primary"},
+        {"names": ["Lê Lai"], "speed_limit": None, "speed": 57, "length": 0.05, "road_class": "primary"},
+        {"names": ["Nguyễn Du"], "speed_limit": 60, "speed": 60, "length": 0.20, "road_class": "primary"},
+    ]}
+
+
+def test_merge_speed_segments_collapses_and_converts_km():
+    m = load()
+    segs = m._merge_speed_segments([
+        {"names": ["Lê Lai"], "speed_limit": None, "speed": 57, "length": 0.10, "road_class": "primary"},
+        {"names": ["Lê Lai"], "speed_limit": None, "speed": 57, "length": 0.05, "road_class": "primary"},
+        {"names": ["X"], "speed_limit": 60, "speed": 60, "length": 0.20, "road_class": "primary"},
+    ])
+    assert len(segs) == 2                          # the two Lê Lai edges merge
+    assert segs[0]["name"] == "Lê Lai" and segs[0]["speed_limit"] is None and segs[0]["speed"] == 57
+    assert segs[0]["length"]["value"] == 150       # 0.10+0.05 km -> 150 m
+    assert segs[1]["speed_limit"] == 60
+
+
+def test_speed_limit_endpoint(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "valhalla", fake_trace_attrs)
+    c = TestClient(m.app)
+    r = c.get("/v1/speed_limit", params={"path": "10.77,106.69|10.78,106.70", "key": "secret"})
+    assert r.status_code == 200
+    b = r.json()
+    assert b["status"] == "OK" and b["units"] == "km/h"
+    assert any(s["speed_limit"] == 60 for s in b["segments"])   # posted limit surfaced
+    assert all("speed" in s for s in b["segments"])             # modeled speed always present
+    r2 = c.get("/v1/speed_limit", params={"location": "10.77,106.69", "key": "secret"})  # single point
+    assert r2.status_code == 200 and r2.json()["segments"]
+
+
+def test_speed_limit_requires_input():
+    m = load()
+    c = TestClient(m.app)
+    assert c.get("/v1/speed_limit", params={"key": "secret"}).status_code == 400

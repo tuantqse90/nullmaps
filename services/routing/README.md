@@ -85,6 +85,23 @@ curl -X POST "$BASE/v1/optimize?key=$API_KEY" -H 'Content-Type: application/json
 Returns the VROOM solution: `routes` (per-vehicle ordered `steps`), `summary` (cost/duration/…),
 and `unassigned`. Add `"options": {"g": true}` to the body for route geometry.
 
+## Speed limits — `GET /v1/speed_limit`
+
+Road speed limits along a path or at a point, via Valhalla `/trace_attributes`.
+
+- `?path=lat,lng|lat,lng|...` (a route or GPS trace) or `?path` replaced by `?location=lat,lng`.
+- Returns per road-segment: `speed_limit` (the **OSM posted limit**, km/h) and `speed`
+  (Valhalla's **modeled** speed, always present). `?mode=` picks the costing (default motorbike).
+
+> **Honest coverage note:** VN OSM `maxspeed` tagging is **sparse**, so `speed_limit` is **often
+> `null`** — most roads have no posted limit in the data. `speed` (modeled from road class) is the
+> always-present practical fallback. Useful for speeding checks + ETA sanity, not a legal source.
+
+```bash
+curl "$BASE/v1/speed_limit?path=10.7715,106.6960|10.7670,106.7110&key=$API_KEY"
+# -> {"status":"OK","units":"km/h","segments":[{"name":"Lê Lai","speed_limit":null,"speed":57,...}]}
+```
+
 ## When extending
 
 - Custom motorbike tuning (avoid highways, alley preferences) goes in the request costing options, or a

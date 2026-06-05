@@ -12,6 +12,7 @@ Live endpoints (all engines up):
   GET /maps/api/place/nearbysearch/json-> geocoder /nearby
   GET /maps/api/place/details/json     -> geocoder /detail
   GET /v1/isochrone, GET /v1/snap      -> Valhalla /isochrone, /trace_route (native)
+  GET /v1/speed_limit                  -> Valhalla /trace_attributes (posted + modeled)
   POST /v1/optimize                    -> VROOM VRP (multi-vehicle), Valhalla-costed
 
 Auth: single shared API_KEY, checked on every endpoint except /healthz.
@@ -67,7 +68,8 @@ app = FastAPI(
         "optional `location=lat,lng` viewport bias, `normalize=1` for AI cleanup.\n\n"
         "**Autocomplete** `GET /maps/api/place/autocomplete/json` — `input=`, optional `location=`.\n\n"
         "**Fleet (native):** `GET /v1/isochrone?location=&contours=10,20`, "
-        "`GET /v1/snap?path=lat,lng|...`, `POST /v1/optimize` (multi-vehicle VRP)."
+        "`GET /v1/snap?path=lat,lng|...`, `GET /v1/speed_limit?path=...|location=`, "
+        "`POST /v1/optimize` (multi-vehicle VRP)."
     ),
 )
 
@@ -1208,6 +1210,58 @@ async def snap(request: Request):
         "duration": {"text": dur_text(s["time"]), "value": round(s["time"])},
         "snapped_polyline": {"points": encode(coords, precision=5)},
     }
+
+
+def _merge_speed_segments(edges):
+    """Collapse consecutive trace_attributes edges sharing name/limit/speed/class into one
+    segment; km -> m. `speed_limit` is the OSM posted limit (often null — VN maxspeed is
+    sparsely tagged); `speed` is Valhalla's modeled speed (always present)."""
+    segs = []
+    for e in edges:
+        name = (e.get("names") or [None])[0]
+        key = (name, e.get("speed_limit"), e.get("speed"), e.get("road_class"))
+        length_m = (e.get("length") or 0) * 1000
+        if segs and segs[-1]["_key"] == key:
+            segs[-1]["_m"] += length_m
+        else:
+            segs.append({"_key": key, "_m": length_m, "name": name, "road_class": e.get("road_class"),
+                         "speed_limit": e.get("speed_limit"), "speed": e.get("speed")})
+    return [{"name": s["name"], "road_class": s["road_class"],
+             "speed_limit": s["speed_limit"], "speed": s["speed"],
+             "length": {"text": dist_text(s["_m"]), "value": round(s["_m"])}} for s in segs]
+
+
+@app.get("/v1/speed_limit")
+async def speed_limit(request: Request):
+    """Road speed limits along a path (or at a point).
+
+    `?path=lat,lng|lat,lng|...` (a route or GPS trace) or `?location=lat,lng`. Returns per
+    road-segment `speed_limit` (OSM posted limit, km/h — **often null, VN maxspeed is
+    sparsely tagged**) and `speed` (Valhalla's modeled speed, always present — a practical
+    estimate). Useful for speeding checks + ETA sanity. `?mode=` picks costing (default
+    motorbike)."""
+    require_key(request)
+    path = request.query_params.get("path")
+    loc = request.query_params.get("location")
+    if path:
+        shape = [parse_latlng(p) for p in path.split("|") if p]
+    elif loc:
+        b = parse_latlng(loc)
+        # one point can't form an edge — probe a ~75 m micro-segment to snap the road
+        shape = [b, {"lat": b["lat"] + 0.0005, "lon": b["lon"] + 0.0005}]
+    else:
+        return JSONResponse({"status": "INVALID_REQUEST",
+                             "error_message": "path or location required"}, status_code=400)
+    if len(shape) < 2:
+        return JSONResponse({"status": "INVALID_REQUEST",
+                             "error_message": "path needs at least 2 points"}, status_code=400)
+    data = await valhalla("/trace_attributes", {
+        "shape": shape, "costing": costing_for(request), "shape_match": "map_snap",
+        "filters": {"attributes": ["edge.names", "edge.speed_limit", "edge.speed",
+                                    "edge.length", "edge.road_class"], "action": "include"},
+    })
+    segments = _merge_speed_segments(data.get("edges") or [])
+    return {"status": "OK" if segments else "ZERO_RESULTS", "units": "km/h", "segments": segments}
 
 
 def _prep_optimize(body):
