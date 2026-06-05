@@ -37,6 +37,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from . import fleet
 from .polyline import reencode, encode, decode
 from .vinarrative import vi_instruction
 
@@ -1313,3 +1314,132 @@ async def optimize(request: Request):
     if status >= 500 and isinstance(data, dict) and data.get("code"):
         status = 422
     return JSONResponse(data, status_code=status)
+
+
+# === Fleet: GPS telemetry + geofence zones + map-matched mileage (rental) =====
+
+@app.post("/v1/ping")
+async def fleet_ping(request: Request):
+    """Ingest vehicle GPS telemetry. Body: one ping or {"pings":[...]}, each
+    {vehicle_id, lat, lon, ts?(epoch s), speed?, heading?}. ts defaults to now."""
+    require_key(request)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"status": "INVALID_REQUEST", "error_message": "invalid JSON"}, status_code=400)
+    items = body.get("pings") if isinstance(body, dict) and "pings" in body else [body]
+    now = int(time.time())
+    rows = []
+    for p in items if isinstance(items, list) else []:
+        if not isinstance(p, dict):
+            continue
+        vid, lat, lon = (p.get("vehicle_id") or p.get("id")), p.get("lat"), p.get("lon")
+        if not vid or lat is None or lon is None:
+            continue
+        rows.append((str(vid), _ffloat(lat), _ffloat(lon), int(p.get("ts") or now),
+                     _ffloat(p.get("speed")), _ffloat(p.get("heading"))))
+    rows = [r for r in rows if r[1] is not None and r[2] is not None]
+    if not rows:
+        return JSONResponse({"status": "INVALID_REQUEST",
+                             "error_message": "each ping needs vehicle_id, lat, lon"}, status_code=400)
+    n = await asyncio.to_thread(fleet.add_pings, rows)
+    return {"status": "OK", "stored": n}
+
+
+@app.get("/v1/vehicles")
+async def fleet_vehicles(request: Request):
+    """Latest known position of each vehicle — the live fleet map."""
+    require_key(request)
+    return {"status": "OK", "vehicles": await asyncio.to_thread(fleet.latest_positions)}
+
+
+@app.get("/v1/vehicles/{vehicle_id}/track")
+async def fleet_track(vehicle_id: str, request: Request):
+    """A vehicle's ping track. ?from=&to= (epoch seconds; default: all up to now)."""
+    require_key(request)
+    frm = int(request.query_params.get("from") or 0)
+    to = int(request.query_params.get("to") or time.time())
+    pts = await asyncio.to_thread(fleet.track, vehicle_id, frm, to)
+    return {"status": "OK", "vehicle_id": vehicle_id, "points": pts}
+
+
+@app.get("/v1/vehicles/{vehicle_id}/mileage")
+async def fleet_mileage(vehicle_id: str, request: Request):
+    """Map-matched distance driven (for distance billing). Snaps the GPS track to roads via
+    Valhalla. ?from=&to= (epoch seconds); ?mode= picks costing (default motorbike)."""
+    require_key(request)
+    frm = int(request.query_params.get("from") or 0)
+    to = int(request.query_params.get("to") or time.time())
+    pts = await asyncio.to_thread(fleet.track, vehicle_id, frm, to)
+    if len(pts) < 2:
+        return {"status": "ZERO_RESULTS", "vehicle_id": vehicle_id,
+                "distance": {"value": 0, "text": "0 m"}, "raw_points": len(pts)}
+    shape = [{"lat": p["lat"], "lon": p["lon"]} for p in pts]
+    if len(shape) > 1000:                       # Valhalla trace caps; downsample evenly
+        step = len(shape) // 1000 + 1
+        shape = shape[::step]
+    data = await valhalla("/trace_route", {
+        "shape": shape, "costing": costing_for(request), "shape_match": "map_snap", "units": "kilometers"})
+    trip = data.get("trip")
+    if not trip or trip.get("status") != 0:
+        return {"status": "ZERO_RESULTS", "vehicle_id": vehicle_id,
+                "error_message": data.get("error", ""), "raw_points": len(pts)}
+    s = trip["summary"]
+    meters = s["length"] * 1000
+    coords = []
+    for leg in trip["legs"]:
+        coords.extend(decode(leg["shape"], precision=6))
+    return {
+        "status": "OK", "vehicle_id": vehicle_id, "from": frm, "to": to, "raw_points": len(pts),
+        "distance": {"value": round(meters), "text": dist_text(meters)},
+        "duration": {"value": round(s["time"]), "text": dur_text(s["time"])},
+        "polyline": {"points": encode(coords, precision=5)},
+    }
+
+
+@app.post("/v1/zones")
+async def fleet_put_zone(request: Request):
+    """Create a geofence zone. Body: {name, type, geometry:<GeoJSON Polygon|MultiPolygon>, props?}.
+    `type` is free text (e.g. allowed / restricted / pricing)."""
+    require_key(request)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"status": "INVALID_REQUEST", "error_message": "invalid JSON"}, status_code=400)
+    geom = body.get("geometry") if isinstance(body, dict) else None
+    if not isinstance(geom, dict) or geom.get("type") not in ("Polygon", "MultiPolygon"):
+        return JSONResponse({"status": "INVALID_REQUEST",
+                             "error_message": "geometry must be a GeoJSON Polygon or MultiPolygon"}, status_code=400)
+    zid = await asyncio.to_thread(fleet.put_zone, body.get("name"), body.get("type"), geom, body.get("props"))
+    return {"status": "OK", "id": zid}
+
+
+@app.get("/v1/zones")
+async def fleet_zones(request: Request):
+    """List geofence zones (with their GeoJSON geometry)."""
+    require_key(request)
+    return {"status": "OK", "zones": await asyncio.to_thread(fleet.list_zones)}
+
+
+@app.delete("/v1/zones/{zone_id}")
+async def fleet_delete_zone(zone_id: int, request: Request):
+    """Delete a geofence zone by id."""
+    require_key(request)
+    n = await asyncio.to_thread(fleet.delete_zone, zone_id)
+    return {"status": "OK" if n else "NOT_FOUND", "deleted": n}
+
+
+@app.get("/v1/zones/check")
+async def fleet_zone_check(request: Request):
+    """Which zones contain a point — drop-off validation, pricing, breach detection.
+    ?location=lat,lng. Returns the containing zones + `inside` (any match)."""
+    require_key(request)
+    loc = request.query_params.get("location")
+    if not loc:
+        return JSONResponse({"status": "INVALID_REQUEST", "error_message": "location required"}, status_code=400)
+    b = parse_latlng(loc)
+    zs = await asyncio.to_thread(fleet.zones_containing, b["lat"], b["lon"])
+    return {
+        "status": "OK", "location": {"lat": b["lat"], "lng": b["lon"]}, "inside": bool(zs),
+        "zones": [{"id": z["id"], "name": z["name"], "type": z["type"], "props": z["props"]} for z in zs],
+    }

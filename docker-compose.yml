@@ -155,6 +155,8 @@ services:
       # Overture Maps VN POIs (≈978k businesses) — read-only FTS index the adapter
       # merges into Photon results. Absent locally = gracefully skipped (see main.py).
       - ./data:/data:ro
+      # Fleet store (GPS telemetry + geofence zones) — writable SQLite (services/adapter/app/fleet.py)
+      - ./data/fleet:/fleet
     depends_on:
       - valhalla
       - geocoder
