@@ -23,6 +23,7 @@ ARTIFACTS=(
   "services/geocoder/data/geocoder.db"
   "services/routing/custom_files/valhalla_tiles.tar"
   "services/routing/custom_files/valhalla.json"
+  "data/fleet/fleet.db"   # NOT regenerable: live GPS telemetry + operator geofence zones
 )
 
 # put <localfile> <remote_dir> — copy then checksum-verify; alert+fail on mismatch.
@@ -38,6 +39,12 @@ put() {
 
 log "backup START -> $DEST"
 rc=0
+# Flush the fleet WAL into the main .db so the copied file is current (best-effort).
+if [ -f data/fleet/fleet.db ]; then
+  docker exec nullmaps-adapter-1 python3 -c \
+    "import sqlite3; sqlite3.connect('/fleet/fleet.db').execute('PRAGMA wal_checkpoint(TRUNCATE)')" \
+    >/dev/null 2>&1 || log "fleet WAL checkpoint skipped"
+fi
 for a in "${ARTIFACTS[@]}"; do
   put "$a" "$DEST"   || rc=1   # flat "latest" (restore.sh reads this)
   put "$a" "$WEEKLY" || rc=1   # retained weekly snapshot
