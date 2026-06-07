@@ -121,3 +121,20 @@ Re-measure and update this table as each service lands. Vietnam-only scope keeps
 services/{tiles,routing,geocoder,adapter}/   data/raw/   infra/   docs/
 docker-compose.yml   Makefile   .env.example
 ```
+
+## License & data attribution
+
+This repository's **code is MIT licensed** (see [`LICENSE`](LICENSE)). The MIT license
+covers the code in this repo only — **not** the upstream data or engines below, which carry
+their own terms. Keep these attributions in any deployment:
+
+- **Map data © OpenStreetMap contributors** — [ODbL](https://www.openstreetmap.org/copyright).
+  Tiles, the Valhalla routing graph, and the lightweight geocoder derive from the Geofabrik
+  Vietnam extract.
+- **POIs / places / divisions from [Overture Maps](https://overturemaps.org)**
+  ([CDLA-Permissive 2.0](https://cdla.dev/permissive-2-0/) + ODbL components; data from Meta,
+  Microsoft, Esri, OSM).
+- Engines: routing **[Valhalla](https://github.com/valhalla/valhalla)**, geocoding
+  **[Photon](https://github.com/komoot/photon)**, optimization
+  **[VROOM](https://github.com/VROOM-Project/vroom)**, tiles **[Martin](https://github.com/maplibre/martin)**,
+  rendering **[MapLibre GL JS](https://maplibre.org)** — each under its own license.
