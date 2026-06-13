@@ -327,3 +327,54 @@ def test_speed_limit_requires_input():
     m = load()
     c = TestClient(m.app)
     assert c.get("/v1/speed_limit", params={"key": "secret"}).status_code == 400
+
+
+# --- /v1/trip_cost (fuel + expressway toll) ------------------------------------
+async def fake_route_and_toll(path, payload):
+    if path == "/route":
+        from app.polyline import encode
+        shape6 = encode([(10.790, 106.755), (10.935, 107.160)], precision=6)
+        return {"trip": {"status": 0, "legs": [{"shape": shape6}],
+                "summary": {"length": 57.8, "time": 3600, "has_toll": True}}}
+    if path == "/trace_attributes":      # 43.4 km tolled, 14.4 km not
+        return {"edges": [{"toll": True, "length": 43.4}, {"toll": False, "length": 14.4}]}
+    return {}
+
+
+def test_vnd_and_compute_trip_cost():
+    m = load()
+    assert m._vnd(195464) == "195.464 ₫"
+    c = m._compute_trip_cost(57800, 43400, 8.0, 23500, 2000)   # car
+    assert c["liters"] == 4.62 and c["fuel"] == 108664 and c["toll"] == 86800
+    assert c["total"] == 195464
+
+
+def test_trip_cost_endpoint_car_with_toll(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "valhalla", fake_route_and_toll)
+    c = TestClient(m.app)
+    r = c.get("/v1/trip_cost", params={"origin": "10.79,106.755", "destination": "10.935,107.16",
+                                       "vehicle": "car", "fuel_price": 23500, "key": "secret"})
+    assert r.status_code == 200
+    b = r.json()
+    assert b["distance"]["value"] == 57800
+    assert b["toll"]["has_toll"] and b["toll"]["tolled_distance"]["value"] == 43400
+    assert b["toll"]["cost"] == 86800                          # 43.4 km × 2000
+    assert b["fuel"]["cost"] == 108664                         # 57.8 km × 8/100 × 23500
+    assert b["total_cost"] == 195464 and b["total_text"] == "≈ 195.464 ₫"
+
+
+def test_trip_cost_motorbike_no_toll(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "valhalla", fake_route_and_toll)
+    c = TestClient(m.app)
+    r = c.get("/v1/trip_cost", params={"origin": "10.79,106.755", "destination": "10.935,107.16",
+                                       "vehicle": "motorbike", "key": "secret"}).json()
+    assert r["toll"]["cost"] == 0 and r["toll"]["has_toll"] is False   # rate 0 -> no toll charged
+    assert r["fuel"]["consumption_l_per_100km"] == 1.8
+
+
+def test_trip_cost_requires_origin_destination():
+    m = load()
+    c = TestClient(m.app)
+    assert c.get("/v1/trip_cost", params={"origin": "10,106", "key": "secret"}).status_code == 400

@@ -102,6 +102,26 @@ curl "$BASE/v1/speed_limit?path=10.7715,106.6960|10.7670,106.7110&key=$API_KEY"
 # -> {"status":"OK","units":"km/h","segments":[{"name":"Lê Lai","speed_limit":null,"speed":57,...}]}
 ```
 
+## Trip cost — `GET /v1/trip_cost`
+
+Estimated **fuel + expressway toll** for a trip — for tourist directions or rental quotes.
+
+```bash
+curl "$BASE/v1/trip_cost?origin=10.79,106.755&destination=10.935,107.16&vehicle=car&key=$KEY"
+# -> distance, duration, fuel{liters,cost}, toll{tolled_distance,cost}, total_cost, polyline
+```
+
+- `vehicle=car|motorbike|truck` sets the Valhalla costing + default fuel use + toll rate.
+- **Fuel** = distance × `fuel_consumption` (L/100km) × `fuel_price` (VND/L). Both overridable;
+  VN fuel price changes ~every 10 days, so pass the current `?fuel_price=`.
+- **Toll** = the route's **tolled km** (Valhalla `edge.toll`) × `toll_per_km` — VN expressways
+  charge by distance. Motorbikes are banned from expressways → rate 0. Overridable `?toll_per_km=`.
+
+> **Estimate, not a quote.** Tolled distance is exact (from OSM `toll=yes` via Valhalla), but the
+> per-km rate is a class average and **flat per-station BOT tolls aren't modeled** — for exact
+> fares you'd add a curated toll-station table (no open VN dataset exists; verified). Defaults:
+> car 8 L/100km + 2000 ₫/km, motorbike 1.8 L/100km + 0, fuel 23 500 ₫/L (`FUEL_PRICE_VND`).
+
 ## When extending
 
 - Custom motorbike tuning (avoid highways, alley preferences) goes in the request costing options, or a

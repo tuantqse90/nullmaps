@@ -13,6 +13,7 @@ Live endpoints (all engines up):
   GET /maps/api/place/details/json     -> geocoder /detail
   GET /v1/isochrone, GET /v1/snap      -> Valhalla /isochrone, /trace_route (native)
   GET /v1/speed_limit                  -> Valhalla /trace_attributes (posted + modeled)
+  GET /v1/trip_cost                    -> fuel + expressway-toll estimate for a trip
   POST /v1/optimize                    -> VROOM VRP (multi-vehicle), Valhalla-costed
 
 Auth: single shared API_KEY, checked on every endpoint except /healthz.
@@ -70,6 +71,7 @@ app = FastAPI(
         "**Autocomplete** `GET /maps/api/place/autocomplete/json` — `input=`, optional `location=`.\n\n"
         "**Fleet (native):** `GET /v1/isochrone?location=&contours=10,20`, "
         "`GET /v1/snap?path=lat,lng|...`, `GET /v1/speed_limit?path=...|location=`, "
+        "`GET /v1/trip_cost?origin=&destination=&vehicle=` (fuel+toll), "
         "`POST /v1/optimize` (multi-vehicle VRP)."
     ),
 )
@@ -106,6 +108,21 @@ NORMALIZER_URL = os.environ.get("NORMALIZER_URL", "").rstrip("/")
 VROOM_URL = os.environ.get("VROOM_URL", "http://vroom:3000").rstrip("/")
 # Default Valhalla costing for optimizer vehicles that don't set their own `profile`.
 VROOM_PROFILE = os.environ.get("VROOM_PROFILE", "motor_scooter")
+
+# Trip-cost estimate (fuel + expressway toll). Per-vehicle defaults: Valhalla costing,
+# fuel use (L/100km), and toll rate (VND per tolled km — VN expressways charge by distance;
+# motorbikes are banned from expressways so 0). All overridable per request. Fuel price in
+# VN changes ~every 10 days — pass ?fuel_price=, the default is a ballpark.
+try:
+    DEFAULT_FUEL_PRICE = float(os.environ.get("FUEL_PRICE_VND") or 23500)
+except ValueError:
+    DEFAULT_FUEL_PRICE = 23500.0
+TRIP_VEHICLES = {
+    "motorbike": {"costing": "motor_scooter", "consumption": 1.8, "toll_per_km": 0.0},
+    "scooter":   {"costing": "motor_scooter", "consumption": 1.8, "toll_per_km": 0.0},
+    "car":       {"costing": "auto",          "consumption": 8.0, "toll_per_km": 2000.0},
+    "truck":     {"costing": "truck",         "consumption": 20.0, "toll_per_km": 4500.0},
+}
 
 # Google travel modes / Goong vehicle -> Valhalla costing. Motorbike-first: an
 # unspecified or two-wheeler mode routes as a scooter (NullMaps' primary use case).
@@ -1442,4 +1459,82 @@ async def fleet_zone_check(request: Request):
     return {
         "status": "OK", "location": {"lat": b["lat"], "lng": b["lon"]}, "inside": bool(zs),
         "zones": [{"id": z["id"], "name": z["name"], "type": z["type"], "props": z["props"]} for z in zs],
+    }
+
+
+# === Trip cost estimate: fuel + expressway toll (tourists / rental quotes) =====
+
+def _vnd(n) -> str:
+    """Format a VND amount with VN thousands separators: 195400 -> '195.400 ₫'."""
+    return f"{int(round(n)):,}".replace(",", ".") + " ₫"
+
+
+def _compute_trip_cost(distance_m, tolled_m, consumption, fuel_price, toll_per_km) -> dict:
+    """Fuel = distance × consumption × price; toll = tolled distance × per-km rate."""
+    liters = (distance_m / 1000.0) * consumption / 100.0
+    fuel = round(liters * fuel_price)
+    toll = round(tolled_m / 1000.0 * toll_per_km)
+    return {"liters": round(liters, 2), "fuel": fuel, "toll": toll, "total": fuel + toll}
+
+
+@app.get("/v1/trip_cost")
+async def trip_cost(request: Request):
+    """Estimated trip cost (fuel + expressway toll) — for tourist directions / rental quotes.
+
+    ?origin=lat,lng&destination=lat,lng&vehicle=car|motorbike|truck. Overrides:
+    ?fuel_price= (VND/L), ?fuel_consumption= (L/100km), ?toll_per_km= (VND).
+    Toll = the route's tolled km (Valhalla edge.toll) × per-km rate — VN expressways charge
+    by distance, motorbikes are banned from them (rate 0). ESTIMATE (flat BOT + per-route
+    rates vary)."""
+    require_key(request)
+    o, d = request.query_params.get("origin"), request.query_params.get("destination")
+    if not o or not d:
+        return JSONResponse({"status": "INVALID_REQUEST",
+                             "error_message": "origin and destination required"}, status_code=400)
+    vehicle = (request.query_params.get("vehicle") or "car").lower()
+    vc = TRIP_VEHICLES.get(vehicle, TRIP_VEHICLES["car"])
+    consumption = _ffloat(request.query_params.get("fuel_consumption")) or vc["consumption"]
+    fuel_price = _ffloat(request.query_params.get("fuel_price")) or DEFAULT_FUEL_PRICE
+    tpk = request.query_params.get("toll_per_km")
+    toll_per_km = _ffloat(tpk) if tpk is not None else vc["toll_per_km"]
+    if toll_per_km is None:
+        toll_per_km = vc["toll_per_km"]
+    route = await valhalla("/route", {"locations": [parse_latlng(o), parse_latlng(d)],
+                                      "costing": vc["costing"], "directions_options": {"units": "kilometers"}})
+    trip = (route or {}).get("trip")
+    if not trip or trip.get("status") != 0:
+        return JSONResponse({"status": "ZERO_RESULTS", "error_message": (route or {}).get("error", "")},
+                            status_code=200)
+    s = trip["summary"]
+    distance_m = s["length"] * 1000
+    has_toll = bool(s.get("has_toll"))
+    coords = []
+    for leg in trip["legs"]:
+        coords.extend(decode(leg["shape"], precision=6))
+    tolled_m = 0.0
+    if has_toll and toll_per_km:                    # only pay for the second call when it matters
+        shape = [{"lat": c[0], "lon": c[1]} for c in coords]
+        if len(shape) > 800:
+            shape = shape[::len(shape) // 800 + 1]
+        ta = await valhalla("/trace_attributes", {
+            "shape": shape, "costing": vc["costing"], "shape_match": "map_snap",
+            "filters": {"attributes": ["edge.toll", "edge.length"], "action": "include"}})
+        tolled_m = sum(e.get("length", 0) for e in (ta.get("edges") or []) if e.get("toll")) * 1000
+    c = _compute_trip_cost(distance_m, tolled_m, consumption, fuel_price, toll_per_km)
+    return {
+        "status": "OK", "vehicle": vehicle, "currency": "VND",
+        "distance": {"value": round(distance_m), "text": dist_text(distance_m)},
+        "duration": {"value": round(s["time"]), "text": dur_text(s["time"])},
+        "fuel": {"liters": c["liters"], "cost": c["fuel"], "cost_text": _vnd(c["fuel"]),
+                 "consumption_l_per_100km": consumption, "price_per_liter": fuel_price},
+        # report has_toll as "is a toll actually charged" (tolled km we bill), not Valhalla's
+        # raw flag — so a motorbike (rate 0, banned from expressways) reads has_toll=false.
+        "toll": {"has_toll": tolled_m > 0, "cost": c["toll"], "cost_text": _vnd(c["toll"]),
+                 "tolled_distance": {"value": round(tolled_m), "text": dist_text(tolled_m)},
+                 "rate_per_km": toll_per_km},
+        "total_cost": c["total"], "total_text": "≈ " + _vnd(c["total"]),
+        "polyline": {"points": encode(coords, precision=5)},
+        "disclaimer": "Chi phí ước tính: xăng theo mức tiêu hao + giá hiện hành; phí cao tốc "
+                      "tính theo số km thu phí × đơn giá nhóm xe (trạm BOT cố định và đơn giá "
+                      "từng tuyến có thể chênh lệch).",
     }
